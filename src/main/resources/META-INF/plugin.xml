@@ -1,15 +1,53 @@
-<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.mkubasz.oodclassicalautocompleted</id>
-    <name>ood-classical-autocompleted</name>
-    <vendor>mkubasz</vendor>
+    <name>OOD Autocomplete</name>
+    <vendor url="https://github.com/mkubasz">mkubasz</vendor>
 
     <depends>com.intellij.modules.platform</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
-
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.mkubasz.oodclassicalautocompleted.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.mkubasz.oodclassicalautocompleted.startup.MyProjectActivity" />
+        <!-- Settings -->
+        <applicationService
+            serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings"/>
+
+        <projectConfigurable
+            groupId="tools"
+            displayName="OOD Autocomplete"
+            id="com.github.mkubasz.oodclassicalautocompleted.settings"
+            instance="com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettingsConfigurable"/>
+
+        <!-- Startup -->
+        <postStartupActivity
+            implementation="com.github.mkubasz.oodclassicalautocompleted.infrastructure.startup.PluginStartupActivity"/>
+
+        <!-- Status Bar -->
+        <statusBarWidgetFactory
+            id="OodAutocompleteStatus"
+            implementation="com.github.mkubasz.oodclassicalautocompleted.infrastructure.statusbar.OodStatusBarWidgetFactory"/>
+
+        <!-- Action Promoter -->
+        <actionPromoter
+            implementation="com.github.mkubasz.oodclassicalautocompleted.editor.actions.OodActionPromoter"/>
+
+        <!-- Project Services -->
+        <projectService
+            serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.AutocompleteService"/>
+        <projectService
+            serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.EditContextTracker"/>
     </extensions>
+
+    <actions>
+        <!-- Autocomplete Actions -->
+        <action id="OodAutocomplete.AcceptCompletion"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.AcceptCompletionAction"
+                text="Accept Completion">
+            <keyboard-shortcut keymap="$default" first-keystroke="TAB"/>
+        </action>
+
+        <action id="OodAutocomplete.RejectCompletion"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.RejectCompletionAction"
+                text="Dismiss Completion">
+            <keyboard-shortcut keymap="$default" first-keystroke="ESCAPE"/>
+        </action>
+    </actions>
 </idea-plugin>
