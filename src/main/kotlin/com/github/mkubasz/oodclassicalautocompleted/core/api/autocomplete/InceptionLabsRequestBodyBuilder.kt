@@ -12,12 +12,19 @@ internal object InceptionLabsRequestBodyBuilder {
         model: String,
         request: AutocompleteRequest,
         options: InceptionLabsGenerationOptions,
-    ): JsonObject = buildJsonObject {
-        put("model", model)
-        put("prompt", buildFimPrompt(request))
-        put("suffix", request.suffix.take(FIM_SUFFIX_CHARS))
-        putGenerationOptions(request, options)
-        mergeExtraBody(options.extraBodyJson)
+        contextBudget: ContextBudgetPacker.Budget = DEFAULT_BUDGET,
+    ): JsonObject {
+        val packed = packContext(request, contextBudget)
+        val healed = TokenBoundaryDetector.heal(packed.localPrefix, packed.localSuffix)
+        val prompt = packed.semanticPrefix + healed.prefix + healed.healedPrefix
+        val suffix = healed.suffix
+        return buildJsonObject {
+            put("model", model)
+            put("prompt", prompt)
+            put("suffix", suffix)
+            putGenerationOptions(request, options)
+            mergeExtraBody(options.extraBodyJson)
+        }
     }
 
     fun buildNextEditBody(
@@ -60,22 +67,26 @@ internal object InceptionLabsRequestBodyBuilder {
         extraBody?.forEach { (key, value) -> put(key, value) }
     }
 
-    private fun buildFimPrompt(request: AutocompleteRequest): String {
-        val contextPrefix = request.inlineContext
+    private fun packContext(
+        request: AutocompleteRequest,
+        budget: ContextBudgetPacker.Budget,
+    ): ContextBudgetPacker.PackedContext {
+        val semanticContext = request.inlineContext
             ?.let { InlineModelContextFormatter.formatForCodePrefix(it, request.language) }
-            ?.take(MAX_INLINE_CONTEXT_CHARS)
             .orEmpty()
 
-        if (contextPrefix.isEmpty()) {
-            return request.prefix.takeLast(FIM_PREFIX_CHARS)
-        }
-
-        val localPrefixBudget = (FIM_PREFIX_CHARS - contextPrefix.length).coerceAtLeast(MIN_LOCAL_PREFIX_CHARS)
-        return contextPrefix + request.prefix.takeLast(localPrefixBudget)
+        return ContextBudgetPacker.pack(
+            semanticContext = semanticContext,
+            fullPrefix = request.prefix,
+            fullSuffix = request.suffix,
+            budget = budget,
+        )
     }
 
-    private const val FIM_PREFIX_CHARS = 2_500
-    private const val FIM_SUFFIX_CHARS = 1_500
-    private const val MAX_INLINE_CONTEXT_CHARS = 900
-    private const val MIN_LOCAL_PREFIX_CHARS = 1_200
+    private val DEFAULT_BUDGET = ContextBudgetPacker.Budget(
+        totalChars = 4_000,
+        minPrefixChars = 1_200,
+        minSuffixChars = 600,
+        maxSemanticChars = 1_000,
+    )
 }

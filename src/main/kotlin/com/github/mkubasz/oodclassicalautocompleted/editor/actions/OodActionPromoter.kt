@@ -11,6 +11,8 @@ class OodActionPromoter : ActionPromoter {
         val oodActions = actions.filter {
             it is AcceptCompletionAction ||
                 it is AcceptInlineSuggestionAction ||
+                it is AcceptNextWordAction ||
+                it is AcceptNextLineAction ||
                 it is RejectCompletionAction ||
                 it is CycleNextSuggestionAction ||
                 it is CyclePreviousSuggestionAction

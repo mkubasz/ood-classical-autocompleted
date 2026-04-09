@@ -10,7 +10,7 @@ import com.intellij.codeInsight.inline.completion.suggestion.InlineCompletionSug
 import com.intellij.codeInsight.inline.completion.elements.InlineCompletionGrayTextElement
 import com.intellij.openapi.components.service
 import com.intellij.openapi.util.UserDataHolderBase
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 class OodInlineCompletionProvider : InlineCompletionProvider {
 
@@ -30,11 +30,13 @@ class OodInlineCompletionProvider : InlineCompletionProvider {
     override suspend fun getSuggestion(request: InlineCompletionRequest): InlineCompletionSuggestion {
         val project = request.editor.project ?: return InlineCompletionSuggestion.Empty
         val service = project.service<AutocompleteService>()
-        val candidate = service.fetchInlineCandidate(request) ?: return InlineCompletionSuggestion.Empty
+
+        val suggestionFlow = service.fetchSuggestionFlow(request)
+            ?: return InlineCompletionSuggestion.Empty
 
         return InlineCompletionSingleSuggestion.Companion.build(
             UserDataHolderBase(),
-            flowOf(InlineCompletionGrayTextElement(candidate.text)),
+            suggestionFlow.map { text -> InlineCompletionGrayTextElement(text) },
         )
     }
 }

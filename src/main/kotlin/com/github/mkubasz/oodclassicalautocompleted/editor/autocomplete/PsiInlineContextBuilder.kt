@@ -2,6 +2,7 @@ package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.ResolvedDefinition
 import com.intellij.lang.LanguageParserDefinitions
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.Project
@@ -49,6 +50,12 @@ internal object PsiInlineContextBuilder {
             }
             .orEmpty()
 
+        val crossFileDefinitions = resolveCrossFileDefinitions(
+            psiFile = psiFile,
+            documentText = documentText,
+            caretOffset = caretOffset,
+        )
+
         return InlineModelContext(
             lexicalContext = lexicalContext,
             enclosingNames = parentChain
@@ -72,6 +79,7 @@ internal object PsiInlineContextBuilder {
             resolvedReferenceName = resolvedReference?.name,
             resolvedFilePath = resolvedReference?.filePath,
             resolvedSnippet = resolvedReference?.snippet,
+            resolvedDefinitions = crossFileDefinitions,
         ).takeIf { it.hasUsefulSignal() }
     }
 
@@ -414,6 +422,84 @@ internal object PsiInlineContextBuilder {
             .trim()
     }
 
+    private fun resolveCrossFileDefinitions(
+        psiFile: PsiFile,
+        documentText: String,
+        caretOffset: Int,
+    ): List<ResolvedDefinition> {
+        val nearbyLines = extractNearbyLines(documentText, caretOffset, CROSS_FILE_SCAN_LINES)
+        if (nearbyLines.isBlank()) return emptyList()
+
+        val nearbyStart = documentText.substring(0, caretOffset)
+            .lastIndexOf('\n', (caretOffset - 1).coerceAtLeast(0))
+            .let { if (it < 0) 0 else it }
+            .let { (it - nearbyLines.length / 2).coerceAtLeast(0) }
+
+        val definitions = linkedSetOf<ResolvedDefinition>()
+        val seenFiles = mutableSetOf(psiFile.virtualFile?.path)
+        var totalChars = 0
+
+        val scanStart = (caretOffset - CROSS_FILE_SCAN_CHARS / 2).coerceAtLeast(0)
+        val scanEnd = (caretOffset + CROSS_FILE_SCAN_CHARS / 2).coerceAtMost(documentText.length)
+        val scanRange = scanStart until scanEnd
+
+        val candidates = linkedSetOf<PsiElement>()
+        for (offset in scanRange step 3) {
+            val safe = offset.coerceIn(0, (psiFile.textLength - 1).coerceAtLeast(0))
+            val element = psiFile.findElementAt(safe) ?: continue
+            candidates.add(element)
+            if (candidates.size >= MAX_SCAN_ELEMENTS) break
+        }
+
+        for (candidate in candidates) {
+            if (definitions.size >= MAX_CROSS_FILE_DEFINITIONS || totalChars >= MAX_CROSS_FILE_CHARS) break
+
+            for (ref in candidate.references) {
+                val resolved = runCatching { ref.resolve() }.getOrNull() ?: continue
+                val targetFile = resolved.containingFile?.virtualFile?.path ?: continue
+                if (targetFile in seenFiles) continue
+                seenFiles.add(targetFile)
+
+                val target = resolved.navigationElement
+                val name = (target as? PsiNamedElement)?.name?.takeIf(String::isNotBlank) ?: continue
+                val signature = extractSignature(target)
+                if (signature.isBlank()) continue
+
+                definitions.add(ResolvedDefinition(name = name, filePath = targetFile, signature = signature))
+                totalChars += signature.length
+            }
+        }
+
+        return definitions.toList()
+    }
+
+    private fun extractNearbyLines(text: String, offset: Int, lineCount: Int): String {
+        val lines = text.lines()
+        val lineIndex = text.substring(0, offset.coerceIn(0, text.length)).count { it == '\n' }
+        val start = (lineIndex - lineCount / 2).coerceAtLeast(0)
+        val end = (lineIndex + lineCount / 2).coerceAtMost(lines.size)
+        return lines.subList(start, end).joinToString("\n")
+    }
+
+    private fun extractSignature(element: PsiElement): String {
+        val text = element.text.replace("\r", "")
+        val lines = text.lineSequence()
+            .map(String::trimEnd)
+            .dropWhile(String::isBlank)
+            .toList()
+        if (lines.isEmpty()) return ""
+
+        val firstLine = lines.first()
+        val isDefinition = DEFINITION_PREFIXES.any { firstLine.trimStart().startsWith(it) } ||
+            firstLine.trimStart().let { it.startsWith("class ") || it.startsWith("interface ") }
+
+        return if (isDefinition) {
+            lines.take(MAX_SIGNATURE_LINES).joinToString("\n").take(MAX_SIGNATURE_CHARS).trim()
+        } else {
+            firstLine.take(MAX_SIGNATURE_CHARS).trim()
+        }
+    }
+
     private fun InlineModelContext.hasUsefulSignal(): Boolean =
         lexicalContext != InlineLexicalContext.UNKNOWN ||
             enclosingNames.isNotEmpty() ||
@@ -428,7 +514,8 @@ internal object PsiInlineContextBuilder {
             !classBaseReferencePrefix.isNullOrBlank() ||
             matchingTypeNames.isNotEmpty() ||
             !resolvedReferenceName.isNullOrBlank() ||
-            !resolvedSnippet.isNullOrBlank()
+            !resolvedSnippet.isNullOrBlank() ||
+            resolvedDefinitions.isNotEmpty()
 
     private data class ResolvedReference(
         val name: String?,
@@ -437,6 +524,13 @@ internal object PsiInlineContextBuilder {
     )
 
     private val DEFINITION_PREFIXES = listOf("def ", "fun ", "function ", "class ", "interface ", "struct ", "enum ")
+    private const val MAX_CROSS_FILE_DEFINITIONS = 3
+    private const val MAX_CROSS_FILE_CHARS = 1_500
+    private const val CROSS_FILE_SCAN_LINES = 10
+    private const val CROSS_FILE_SCAN_CHARS = 1_000
+    private const val MAX_SCAN_ELEMENTS = 30
+    private const val MAX_SIGNATURE_LINES = 4
+    private const val MAX_SIGNATURE_CHARS = 300
     private const val MAX_PARENT_DEPTH = 8
     private const val MAX_REFERENCE_PARENT_DEPTH = 6
     private const val MAX_ENCLOSING_NAMES = 4

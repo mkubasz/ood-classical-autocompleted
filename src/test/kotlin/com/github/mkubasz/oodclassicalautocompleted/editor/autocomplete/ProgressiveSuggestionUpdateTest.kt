@@ -58,7 +58,7 @@ class ProgressiveSuggestionUpdateTest : BasePlatformTestCase() {
         assertEquals(ProgressiveSuggestionUpdate.Outcome.NoMatch, outcome)
     }
 
-    fun testReturnsNoMatchForSuggestionsInsertedAwayFromCaret() {
+    fun testReturnsNoMatchWhenEditOverlapsOffCaretSuggestion() {
         val outcome = ProgressiveSuggestionUpdate.apply(
             activeSuggestion = ProgressiveSuggestionUpdate.ActiveSuggestion(
                 anchorOffset = 15,
@@ -66,12 +66,69 @@ class ProgressiveSuggestionUpdateTest : BasePlatformTestCase() {
                 text = "await ",
             ),
             edit = ProgressiveSuggestionUpdate.Edit(
-                offset = 15,
+                offset = 12,
                 oldLength = 0,
-                newText = "a",
+                newText = "x",
             ),
         )
 
         assertEquals(ProgressiveSuggestionUpdate.Outcome.NoMatch, outcome)
+    }
+
+    fun testShiftsOffsetsWhenEditIsBeforeOffCaretSuggestion() {
+        val outcome = ProgressiveSuggestionUpdate.apply(
+            activeSuggestion = ProgressiveSuggestionUpdate.ActiveSuggestion(
+                anchorOffset = 50,
+                insertionOffset = 100,
+                text = "return value",
+            ),
+            edit = ProgressiveSuggestionUpdate.Edit(
+                offset = 50,
+                oldLength = 0,
+                newText = "abc",
+            ),
+        )
+
+        val shifted = outcome as ProgressiveSuggestionUpdate.Outcome.OffsetShifted
+        assertEquals(103, shifted.suggestion.insertionOffset)
+        assertEquals("return value", shifted.suggestion.text)
+    }
+
+    fun testKeepsSuggestionWhenEditIsAfterOffCaretSuggestion() {
+        val outcome = ProgressiveSuggestionUpdate.apply(
+            activeSuggestion = ProgressiveSuggestionUpdate.ActiveSuggestion(
+                anchorOffset = 200,
+                insertionOffset = 100,
+                text = "return value",
+            ),
+            edit = ProgressiveSuggestionUpdate.Edit(
+                offset = 200,
+                oldLength = 0,
+                newText = "z",
+            ),
+        )
+
+        val shifted = outcome as ProgressiveSuggestionUpdate.Outcome.OffsetShifted
+        assertEquals(100, shifted.suggestion.insertionOffset)
+        assertEquals("return value", shifted.suggestion.text)
+    }
+
+    fun testShiftsOffsetsOnDeletionBeforeOffCaretSuggestion() {
+        val outcome = ProgressiveSuggestionUpdate.apply(
+            activeSuggestion = ProgressiveSuggestionUpdate.ActiveSuggestion(
+                anchorOffset = 50,
+                insertionOffset = 100,
+                text = "return value",
+            ),
+            edit = ProgressiveSuggestionUpdate.Edit(
+                offset = 40,
+                oldLength = 5,
+                newText = "",
+            ),
+        )
+
+        val shifted = outcome as ProgressiveSuggestionUpdate.Outcome.OffsetShifted
+        assertEquals(95, shifted.suggestion.insertionOffset)
+        assertEquals("return value", shifted.suggestion.text)
     }
 }

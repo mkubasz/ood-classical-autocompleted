@@ -79,6 +79,16 @@ internal object InlineModelContextFormatter {
             lines += "resolved_definition:"
             lines += context.resolvedSnippet.lineSequence().toList()
         }
+        if (context.resolvedDefinitions.isNotEmpty()) {
+            context.resolvedDefinitions.forEach { def ->
+                val header = buildString {
+                    append("cross_file_definition: ${def.name}")
+                    def.filePath?.let { append(" (${it.substringAfterLast('/')})") }
+                }
+                lines += header
+                lines += def.signature.lineSequence().toList()
+            }
+        }
 
         return lines.takeIf { it.size > 1 }.orEmpty()
     }

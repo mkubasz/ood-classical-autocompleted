@@ -72,4 +72,75 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
 
         assertEquals("", normalized)
     }
+
+    fun testStripsLeadingParenDuplicationWithSuffix() {
+        val request = AutocompleteRequest(
+            prefix = "class Ania(Czl",
+            suffix = "):\n    pass",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "):",
+            request = request,
+            maxChars = 400,
+        )
+
+        assertFalse("Should not contain leading paren that duplicates suffix", normalized.startsWith(")"))
+    }
+
+    fun testFiltersVeryShortSuggestions() {
+        val request = AutocompleteRequest(
+            prefix = "b = ",
+            suffix = "",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "1",
+            request = request,
+            maxChars = 400,
+        )
+
+        assertEquals("", normalized)
+    }
+
+    fun testStripsDuplicateClosingParenForGoMethodReceiver() {
+        val request = AutocompleteRequest(
+            prefix = "func (",
+            suffix = ") Count() int {\n",
+            filePath = "counter.go",
+            language = "go",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "a *AdditionCounter) Count() int {",
+            request = request,
+            maxChars = 400,
+        )
+
+        assertFalse(
+            "Should not have duplicate closing paren: '$normalized'",
+            normalized.contains(") Count") && request.suffix.startsWith(")"),
+        )
+    }
+
+    fun testStripsDuplicateClosingBracketForArray() {
+        val request = AutocompleteRequest(
+            prefix = "items = [",
+            suffix = "]\n",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "1, 2, 3]",
+            request = request,
+            maxChars = 400,
+        )
+
+        assertFalse("Should strip duplicate bracket: '$normalized'", normalized.endsWith("]"))
+    }
 }

@@ -4,6 +4,7 @@ interface AutocompleteProvider {
     val capabilities: Set<AutocompleteCapability>
 
     suspend fun complete(request: AutocompleteRequest): CompletionResponse?
+    suspend fun completeStreaming(request: AutocompleteRequest): kotlinx.coroutines.flow.Flow<String>? = null
     fun cancel()
     fun dispose()
 }
@@ -43,6 +44,7 @@ data class InlineModelContext(
     val resolvedReferenceName: String? = null,
     val resolvedFilePath: String? = null,
     val resolvedSnippet: String? = null,
+    val resolvedDefinitions: List<ResolvedDefinition> = emptyList(),
 )
 
 enum class InlineLexicalContext {
@@ -66,6 +68,13 @@ data class InlineCompletionCandidate(
     val text: String,
     val insertionOffset: Int,
     val isExactInsertion: Boolean = false,
+    val confidenceScore: Double? = null,
+)
+
+data class ResolvedDefinition(
+    val name: String,
+    val filePath: String?,
+    val signature: String,
 )
 
 data class NextEditCompletionCandidate(

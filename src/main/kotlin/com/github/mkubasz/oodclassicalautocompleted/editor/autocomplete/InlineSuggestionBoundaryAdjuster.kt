@@ -40,6 +40,7 @@ internal object InlineSuggestionBoundaryAdjuster {
 
         val trimmedPrefix = linePrefix.trimEnd()
         if (trimmedPrefix.isEmpty()) return false
+        if (isContinuationOfLastToken(trimmedPrefix, text)) return false
         if (!startsFreshStatement(text)) return false
         if (!endsClosedStatement(trimmedPrefix)) return false
 
@@ -64,6 +65,7 @@ internal object InlineSuggestionBoundaryAdjuster {
 
     private fun endsClosedStatement(linePrefix: String): Boolean {
         if (linePrefix.endsWith("->")) return false
+        if (isIncompleteDefinitionHeader(linePrefix)) return false
 
         val last = linePrefix.last()
         if (last in SOFT_STATEMENT_ENDINGS) return false
@@ -108,9 +110,27 @@ internal object InlineSuggestionBoundaryAdjuster {
         return round > 0 || square > 0 || curly > 0
     }
 
+    private fun isContinuationOfLastToken(linePrefix: String, suggestion: String): Boolean {
+        if (linePrefix.isEmpty() || suggestion.isEmpty()) return false
+        val lastChar = linePrefix.last()
+        val firstChar = suggestion.first()
+        return (lastChar.isLetter() || lastChar == '_') &&
+            (firstChar.isLetterOrDigit() || firstChar == '_')
+    }
+
+    private fun isIncompleteDefinitionHeader(linePrefix: String): Boolean {
+        val trimmed = linePrefix.trimStart()
+        val isDefHeader = DEFINITION_HEADER_PREFIXES.any { trimmed.startsWith(it) }
+        if (!isDefHeader) return false
+        return !trimmed.trimEnd().endsWith(':')
+    }
+
+    private val DEFINITION_HEADER_PREFIXES = listOf(
+        "def ", "class ", "async def ", "fun ", "function ", "interface ", "struct ", "enum ",
+    )
     private val HARD_STATEMENT_ENDINGS = setOf(')', ']', '}', '\'', '"')
     private val SOFT_STATEMENT_ENDINGS = setOf('(', '[', '{', ',', '.', ':', '=', '\\')
-    private val EXPRESSION_CONTINUATIONS = setOf('.', '(', '[', '{', ',', '+', '-', '*', '/', '%', '&', '|', '^', '<', '>')
+    private val EXPRESSION_CONTINUATIONS = setOf('.', '(', '[', '{', ',', '+', '-', '*', '/', '%', '&', '|', '^', '<', '>', '=')
     private val CONTINUATION_KEYWORDS = setOf(
         "and",
         "assert",

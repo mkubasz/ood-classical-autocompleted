@@ -46,7 +46,6 @@ internal object AutocompleteProviderCoordinator {
             }) {
                 is CompletedResult.Fim -> {
                     if (completed.result != null) {
-                        nextEditProvider.cancel()
                         nextEditDeferred.cancel()
                         return@coroutineScope completed.result
                     }
@@ -54,7 +53,6 @@ internal object AutocompleteProviderCoordinator {
 
                 is CompletedResult.NextEdit -> {
                     if (completed.result != null) {
-                        fimProvider.cancel()
                         fimDeferred.cancel()
                         return@coroutineScope completed.result
                     }
@@ -165,7 +163,6 @@ internal object AutocompleteProviderCoordinator {
                         shouldShow = shouldShow,
                     )
                     if (selection != null) {
-                        nextEditProvider.cancel()
                         nextEditDeferred.cancel()
                         return@coroutineScope selection
                     }
@@ -180,7 +177,6 @@ internal object AutocompleteProviderCoordinator {
                         shouldShow = shouldShow,
                     ).selection
                     if (selection != null) {
-                        fimProvider.cancel()
                         fimDeferred.cancel()
                         return@coroutineScope selection
                     }

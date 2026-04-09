@@ -9,6 +9,7 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
@@ -60,10 +61,7 @@ class PluginSettingsConfigurable : Configurable {
     private var inceptionLabsNextEditLinesAboveField: JBTextField? = null
     private var inceptionLabsNextEditLinesBelowField: JBTextField? = null
 
-    private var mainPanel: JPanel? = null
-
-    private var anthropicRows: List<Row> = emptyList()
-    private var inceptionLabsRows: List<Row> = emptyList()
+    private var tabbedPane: JBTabbedPane? = null
 
     override fun getDisplayName(): String = "OOD Autocomplete"
 
@@ -114,181 +112,174 @@ class PluginSettingsConfigurable : Configurable {
         inceptionLabsNextEditLinesAboveField = numericField(state.inceptionLabsNextEditLinesAboveCursor)
         inceptionLabsNextEditLinesBelowField = numericField(state.inceptionLabsNextEditLinesBelowCursor)
 
-        val anthropicRowList = mutableListOf<Row>()
-        val inceptionLabsRowList = mutableListOf<Row>()
-
-        mainPanel = panel {
-            group("Anthropic") {
-                anthropicRowList += row("API Key:") {
-                    cell(apiKeyField!!)
-                        .comment("Anthropic API key used for autocomplete")
-                }
-                anthropicRowList += row("Base URL:") {
-                    cell(baseUrlField!!)
-                        .comment("Anthropic autocomplete endpoint")
-                }
-                anthropicRowList += row("Model:") {
-                    cell(modelField!!)
-                        .comment("Model identifier for autocomplete")
-                }
-            }
-
-            group("Autocomplete") {
-                row {
-                    cell(autocompleteCheckbox!!)
-                }
-                row("Provider:") {
-                    cell(providerCombo!!)
-                        .comment("Choose your autocomplete provider")
-                }
-                row("Debounce (ms):") {
-                    cell(debounceField!!)
-                        .comment("Delay before requesting completions")
-                }
-                row("Inline dwell (ms):") {
-                    cell(dwellField!!)
-                        .comment("Minimum time before an inline suggestion becomes visible")
-                }
-                row {
-                    cell(nextEditEnabledCheckbox!!)
-                }
-                row {
-                    cell(nextEditResolveImportsCheckbox!!)
-                        .comment("Apply one IDE-provided import fix after a Next Edit if an unambiguous action is available")
-                }
-                row("Next Edit preview max lines:") {
-                    cell(nextEditPreviewMaxLinesField!!)
-                        .comment("Maximum replacement preview height before the next edit is suppressed")
-                }
-                row("Cache TTL (ms):") {
-                    cell(suggestionCacheTtlField!!)
-                        .comment("Lifetime for cached inline suggestions")
-                }
-                row("Cache max entries:") {
-                    cell(suggestionCacheMaxEntriesField!!)
-                        .comment("Maximum number of cached inline contexts")
-                }
-                row {
-                    cell(debugMetricsLoggingCheckbox!!)
-                }
-            }
-
-            group("Keyboard Shortcuts") {
-                row {
-                    cell(acceptOnRightArrowCheckbox!!)
-                }
-                row {
-                    cell(acceptOnEndKeyCheckbox!!)
-                }
-                row("Next alternative:") {
-                    cell(cycleNextShortcutField!!)
-                        .comment("Optional. Examples: 'cmd+y', 'cmd+;', 'cmd+]', or 'ctrl+alt+.'. Leave blank to disable.")
-                }
-                row("Previous alternative:") {
-                    cell(cyclePreviousShortcutField!!)
-                        .comment("Optional. Examples: 'cmd+u', 'cmd+[', 'cmd+,', or 'ctrl+alt+,'. Leave blank to disable.")
-                }
-            }
-
-            group("Inception Labs") {
-                inceptionLabsRowList += row("API Key:") {
-                    cell(inceptionLabsApiKeyField!!)
-                        .comment("Your Inception Labs API key")
-                }
-                inceptionLabsRowList += row("Base URL:") {
-                    cell(inceptionLabsBaseUrlField!!)
-                        .comment("Default: https://api.inceptionlabs.ai/v1")
-                }
-                inceptionLabsRowList += row("Model:") {
-                    cell(inceptionLabsModelField!!)
-                        .comment("Default: ${InceptionLabsFimProvider.DEFAULT_MODEL}")
-                }
-            }
-
-            group("Inception FIM Advanced") {
-                inceptionLabsRowList += row("Max tokens:") {
-                    cell(inceptionLabsFimMaxTokensField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_MAX_TOKENS}. Range: 1-8192.")
-                }
-                inceptionLabsRowList += row("Presence penalty:") {
-                    cell(inceptionLabsFimPresencePenaltyField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_PRESENCE_PENALTY}. Range: -2.0 to 2.0.")
-                }
-                inceptionLabsRowList += row("Temperature:") {
-                    cell(inceptionLabsFimTemperatureField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_TEMPERATURE}. Range: 0.0 to 1.0.")
-                }
-                inceptionLabsRowList += row("Top-p:") {
-                    cell(inceptionLabsFimTopPField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_TOP_P}. Range: 0.0 to 1.0.")
-                }
-                inceptionLabsRowList += row("Stop sequences:") {
-                    cell(scrollPane(inceptionLabsFimStopSequencesArea!!))
-                        .align(AlignX.FILL)
-                        .comment("Optional. One sequence per line, up to 4.")
-                }
-                inceptionLabsRowList += row("Extra JSON:") {
-                    cell(scrollPane(inceptionLabsFimExtraBodyJsonArea!!))
-                        .align(AlignX.FILL)
-                        .comment("Optional expert override. Top-level JSON object only. Reserved keys like model/prompt/stop and streaming keys are rejected.")
-                }
-            }
-
-            group("Inception Next Edit Advanced") {
-                inceptionLabsRowList += row("Max tokens:") {
-                    cell(inceptionLabsNextEditMaxTokensField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_MAX_TOKENS}. Range: 1-8192.")
-                }
-                inceptionLabsRowList += row("Presence penalty:") {
-                    cell(inceptionLabsNextEditPresencePenaltyField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_PRESENCE_PENALTY}. Range: -2.0 to 2.0.")
-                }
-                inceptionLabsRowList += row("Temperature:") {
-                    cell(inceptionLabsNextEditTemperatureField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_TEMPERATURE}. Range: 0.0 to 1.0.")
-                }
-                inceptionLabsRowList += row("Top-p:") {
-                    cell(inceptionLabsNextEditTopPField!!)
-                        .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_TOP_P}. Range: 0.0 to 1.0.")
-                }
-                inceptionLabsRowList += row("Stop sequences:") {
-                    cell(scrollPane(inceptionLabsNextEditStopSequencesArea!!))
-                        .align(AlignX.FILL)
-                        .comment("Optional. One sequence per line, up to 4.")
-                }
-                inceptionLabsRowList += row("Extra JSON:") {
-                    cell(scrollPane(inceptionLabsNextEditExtraBodyJsonArea!!))
-                        .align(AlignX.FILL)
-                        .comment("Optional expert override. Top-level JSON object only. Reserved keys like model/messages/stop and streaming keys are rejected.")
-                }
-                inceptionLabsRowList += row("Lines above cursor:") {
-                    cell(inceptionLabsNextEditLinesAboveField!!)
-                        .comment("Default: ${InceptionLabsNextEditContextOptions.DEFAULT_LINES_ABOVE_CURSOR}. Must be at least 1.")
-                }
-                inceptionLabsRowList += row("Lines below cursor:") {
-                    cell(inceptionLabsNextEditLinesBelowField!!)
-                        .comment("Default: ${InceptionLabsNextEditContextOptions.DEFAULT_LINES_BELOW_CURSOR}. Must be at least 1.")
-                }
-            }
+        tabbedPane = JBTabbedPane().apply {
+            addTab("General", buildGeneralTab())
+            addTab("Anthropic", buildAnthropicTab())
+            addTab("Inception Labs", buildInceptionLabsTab())
+            addTab("Inception Advanced", buildInceptionAdvancedTab())
         }
-
-        anthropicRows = anthropicRowList
-        inceptionLabsRows = inceptionLabsRowList
-
-        updateProviderVisibility()
-        providerCombo!!.addItemListener { event ->
-            if (event.stateChange == ItemEvent.SELECTED) {
-                updateProviderVisibility()
-            }
-        }
-
-        return mainPanel!!
+        return tabbedPane!!
     }
 
-    private fun updateProviderVisibility() {
-        val selected = providerCombo?.selectedItem as? AutocompleteProviderType ?: return
-        anthropicRows.forEach { it.visible(selected == AutocompleteProviderType.ANTHROPIC) }
-        inceptionLabsRows.forEach { it.visible(selected == AutocompleteProviderType.INCEPTION_LABS) }
+    private fun buildGeneralTab(): JComponent = panel {
+        group("Provider") {
+            row {
+                cell(autocompleteCheckbox!!)
+            }
+            row("Provider:") {
+                cell(providerCombo!!)
+                    .comment("Choose your autocomplete provider")
+            }
+        }
+        group("Behavior") {
+            row("Debounce (ms):") {
+                cell(debounceField!!)
+                    .comment("Delay before requesting completions")
+            }
+            row("Inline dwell (ms):") {
+                cell(dwellField!!)
+                    .comment("Minimum time before an inline suggestion becomes visible")
+            }
+            row {
+                cell(nextEditEnabledCheckbox!!)
+            }
+            row {
+                cell(nextEditResolveImportsCheckbox!!)
+            }
+            row("Next Edit preview max lines:") {
+                cell(nextEditPreviewMaxLinesField!!)
+            }
+        }
+        group("Cache") {
+            row("Cache TTL (ms):") {
+                cell(suggestionCacheTtlField!!)
+            }
+            row("Cache max entries:") {
+                cell(suggestionCacheMaxEntriesField!!)
+            }
+        }
+        group("Keyboard Shortcuts") {
+            row {
+                cell(acceptOnRightArrowCheckbox!!)
+            }
+            row {
+                cell(acceptOnEndKeyCheckbox!!)
+            }
+            row("Next alternative:") {
+                cell(cycleNextShortcutField!!)
+                    .comment("Optional. Examples: 'cmd+y', 'cmd+;', or 'ctrl+alt+.'")
+            }
+            row("Previous alternative:") {
+                cell(cyclePreviousShortcutField!!)
+                    .comment("Optional. Examples: 'cmd+u', 'cmd+[', or 'ctrl+alt+,'")
+            }
+        }
+        group("Debug") {
+            row {
+                cell(debugMetricsLoggingCheckbox!!)
+            }
+        }
+    }
+
+    private fun buildAnthropicTab(): JComponent = panel {
+        group("Connection") {
+            row("API Key:") {
+                cell(apiKeyField!!)
+                    .comment("Anthropic API key used for autocomplete")
+            }
+            row("Base URL:") {
+                cell(baseUrlField!!)
+                    .comment("Default: ${PluginSettings.DEFAULT_API_URL}")
+            }
+            row("Model:") {
+                cell(modelField!!)
+                    .comment("Default: ${PluginSettings.DEFAULT_MODEL}")
+            }
+        }
+    }
+
+    private fun buildInceptionLabsTab(): JComponent = panel {
+        group("Connection") {
+            row("API Key:") {
+                cell(inceptionLabsApiKeyField!!)
+                    .comment("Your Inception Labs API key")
+            }
+            row("Base URL:") {
+                cell(inceptionLabsBaseUrlField!!)
+                    .comment("Default: ${InceptionLabsFimProvider.DEFAULT_BASE_URL}")
+            }
+            row("Model:") {
+                cell(inceptionLabsModelField!!)
+                    .comment("Default: ${InceptionLabsFimProvider.DEFAULT_MODEL}")
+            }
+        }
+    }
+
+    private fun buildInceptionAdvancedTab(): JComponent = panel {
+        group("FIM Completion") {
+            row("Max tokens:") {
+                cell(inceptionLabsFimMaxTokensField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_MAX_TOKENS}. Range: 1-8192.")
+            }
+            row("Presence penalty:") {
+                cell(inceptionLabsFimPresencePenaltyField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_PRESENCE_PENALTY}. Range: -2.0 to 2.0.")
+            }
+            row("Temperature:") {
+                cell(inceptionLabsFimTemperatureField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_TEMPERATURE}. Range: 0.0 to 1.0.")
+            }
+            row("Top-p:") {
+                cell(inceptionLabsFimTopPField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.FIM_DEFAULT_TOP_P}. Range: 0.0 to 1.0.")
+            }
+            row("Stop sequences:") {
+                cell(scrollPane(inceptionLabsFimStopSequencesArea!!))
+                    .align(AlignX.FILL)
+                    .comment("One per line, up to 4.")
+            }
+            row("Extra JSON:") {
+                cell(scrollPane(inceptionLabsFimExtraBodyJsonArea!!))
+                    .align(AlignX.FILL)
+                    .comment("Expert override. Reserved keys rejected.")
+            }
+        }
+        group("Next Edit") {
+            row("Max tokens:") {
+                cell(inceptionLabsNextEditMaxTokensField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_MAX_TOKENS}. Range: 1-8192.")
+            }
+            row("Presence penalty:") {
+                cell(inceptionLabsNextEditPresencePenaltyField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_PRESENCE_PENALTY}. Range: -2.0 to 2.0.")
+            }
+            row("Temperature:") {
+                cell(inceptionLabsNextEditTemperatureField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_TEMPERATURE}. Range: 0.0 to 1.0.")
+            }
+            row("Top-p:") {
+                cell(inceptionLabsNextEditTopPField!!)
+                    .comment("Optional. Default: ${InceptionLabsAdvancedSettings.NEXT_EDIT_DEFAULT_TOP_P}. Range: 0.0 to 1.0.")
+            }
+            row("Stop sequences:") {
+                cell(scrollPane(inceptionLabsNextEditStopSequencesArea!!))
+                    .align(AlignX.FILL)
+                    .comment("One per line, up to 4.")
+            }
+            row("Extra JSON:") {
+                cell(scrollPane(inceptionLabsNextEditExtraBodyJsonArea!!))
+                    .align(AlignX.FILL)
+                    .comment("Expert override. Reserved keys rejected.")
+            }
+            row("Lines above cursor:") {
+                cell(inceptionLabsNextEditLinesAboveField!!)
+                    .comment("Default: ${InceptionLabsNextEditContextOptions.DEFAULT_LINES_ABOVE_CURSOR}")
+            }
+            row("Lines below cursor:") {
+                cell(inceptionLabsNextEditLinesBelowField!!)
+                    .comment("Default: ${InceptionLabsNextEditContextOptions.DEFAULT_LINES_BELOW_CURSOR}")
+            }
+        }
     }
 
     override fun isModified(): Boolean {
@@ -474,7 +465,7 @@ class PluginSettingsConfigurable : Configurable {
         inceptionLabsNextEditLinesAboveField?.text = state.inceptionLabsNextEditLinesAboveCursor.toString()
         inceptionLabsNextEditLinesBelowField?.text = state.inceptionLabsNextEditLinesBelowCursor.toString()
 
-        updateProviderVisibility()
+        // Tab layout handles provider visibility
     }
 
     private fun normalizeShortcut(rawValue: String, fieldName: String): String = try {

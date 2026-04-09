@@ -75,10 +75,13 @@ class InceptionLabsRequestBodyBuilderTest : BasePlatformTestCase() {
             options = InceptionLabsGenerationOptions(),
         )
 
-        assertEquals(2_500, body["prompt"]?.jsonPrimitive?.content?.length)
-        assertEquals(prefix.takeLast(2_500), body["prompt"]?.jsonPrimitive?.content)
-        assertEquals(1_500, body["suffix"]?.jsonPrimitive?.content?.length)
-        assertEquals(suffix.take(1_500), body["suffix"]?.jsonPrimitive?.content)
+        val promptLength = body["prompt"]?.jsonPrimitive?.content?.length ?: 0
+        val suffixLength = body["suffix"]?.jsonPrimitive?.content?.length ?: 0
+        assertTrue("Prompt should be bounded: $promptLength", promptLength <= 4_000)
+        assertTrue("Suffix should be bounded: $suffixLength", suffixLength <= 2_000)
+        assertTrue("Total should fit budget", promptLength + suffixLength <= 4_500)
+        assertTrue("Prompt should be substantial: $promptLength", promptLength >= 1_200)
+        assertTrue("Suffix should be substantial: $suffixLength", suffixLength >= 600)
     }
 
     fun testBuildFimBodyIncludesInlineContextComments() {

@@ -8,7 +8,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicBoolean
 
 class AnthropicAutocompleteProvider(
     private val apiKey: String,
@@ -29,11 +28,8 @@ class AnthropicAutocompleteProvider(
         encodeDefaults = true
     }
 
-    private val cancelled = AtomicBoolean(false)
-
     override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
-        cancelled.set(false)
 
         val body = buildJsonObject {
             put("model", model)
@@ -85,45 +81,55 @@ class AnthropicAutocompleteProvider(
         }
     }
 
-    override fun cancel() {
-        cancelled.set(true)
-    }
+    override fun cancel() {}
 
     override fun dispose() {
-        cancel()
         httpClient.close()
     }
 
-    private fun buildPrompt(request: AutocompleteRequest): String = buildString {
-        appendLine("Complete the code at the cursor.")
-        appendLine("Return only the text to insert, with no markdown, explanations, or code fences.")
-        appendLine("Prefer a short continuation that fits naturally before the provided suffix.")
-        request.inlineContext?.let { context ->
-            val formatted = InlineModelContextFormatter.formatForInstructionPrompt(context)
-            if (formatted.isNotBlank()) {
+    private fun buildPrompt(request: AutocompleteRequest): String {
+        val semanticContext = request.inlineContext
+            ?.let { InlineModelContextFormatter.formatForInstructionPrompt(it) }
+            .orEmpty()
+        val packed = ContextBudgetPacker.pack(
+            semanticContext = semanticContext,
+            fullPrefix = request.prefix,
+            fullSuffix = request.suffix,
+            budget = BUDGET,
+        )
+        return buildString {
+            appendLine("Complete the code at the cursor.")
+            appendLine("Return only the text to insert, with no markdown, explanations, or code fences.")
+            appendLine("Prefer a short continuation that fits naturally before the provided suffix.")
+            if (packed.semanticPrefix.isNotBlank()) {
                 appendLine("<ide_context>")
-                append(formatted)
+                append(packed.semanticPrefix)
                 appendLine("</ide_context>")
             }
+            if (!request.filePath.isNullOrBlank()) {
+                appendLine("File: ${request.filePath}")
+            }
+            if (!request.language.isNullOrBlank()) {
+                appendLine("Language: ${request.language}")
+            }
+            appendLine("<prefix>")
+            appendLine(packed.localPrefix)
+            appendLine("</prefix>")
+            appendLine("<suffix>")
+            appendLine(packed.localSuffix)
+            appendLine("</suffix>")
         }
-        if (!request.filePath.isNullOrBlank()) {
-            appendLine("File: ${request.filePath}")
-        }
-        if (!request.language.isNullOrBlank()) {
-            appendLine("Language: ${request.language}")
-        }
-        appendLine("<prefix>")
-        appendLine(request.prefix.takeLast(CONTEXT_CHARS))
-        appendLine("</prefix>")
-        appendLine("<suffix>")
-        appendLine(request.suffix.take(CONTEXT_CHARS))
-        appendLine("</suffix>")
     }
 
     companion object {
         private const val API_VERSION = "2023-06-01"
-        private const val CONTEXT_CHARS = 1_500
         private const val MAX_TOKENS = 96
+        private val BUDGET = ContextBudgetPacker.Budget(
+            totalChars = 3_500,
+            minPrefixChars = 800,
+            minSuffixChars = 500,
+            maxSemanticChars = 800,
+        )
         private const val AUTOCOMPLETE_SYSTEM_PROMPT = """
             You are a JetBrains IDE autocomplete engine.
             Continue the code at the cursor.

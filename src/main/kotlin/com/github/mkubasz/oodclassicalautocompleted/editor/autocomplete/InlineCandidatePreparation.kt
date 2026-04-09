@@ -2,6 +2,7 @@ package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
 
 internal object InlineCandidatePreparation {
 
@@ -28,6 +29,7 @@ internal object InlineCandidatePreparation {
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
     ): PreparationResult {
+        val settings = PluginSettings.getInstance().state
         var retryRequest: AutocompleteRequest? = null
 
         val candidates = rawCandidates.mapNotNull { candidate ->
@@ -60,7 +62,20 @@ internal object InlineCandidatePreparation {
                     null
                 }
             }
-        }.distinctBy { it.insertionOffset to it.text }
+        }
+            .distinctBy { it.insertionOffset to it.text }
+            .map { candidate ->
+                val score = InlineConfidenceScorer.score(candidate, request)
+                candidate.copy(confidenceScore = score)
+            }
+            .filter { it.confidenceScore == null || it.confidenceScore >= settings.minConfidenceScore }
+            .let { scored ->
+                if (!settings.correctnessFilterEnabled || snapshot == null) return@let scored
+                scored.filter { candidate ->
+                    InlineCorrectnessFilter.check(candidate, request, snapshot) !=
+                        InlineCorrectnessFilter.Result.Fail
+                }
+            }
 
         return PreparationResult(
             candidates = candidates,

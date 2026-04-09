@@ -55,6 +55,14 @@
                 class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.RejectCompletionAction"
                 text="Dismiss Completion"/>
 
+        <action id="OodAutocomplete.AcceptNextWord"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.AcceptNextWordAction"
+                text="Accept Next Word"/>
+
+        <action id="OodAutocomplete.AcceptNextLine"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.AcceptNextLineAction"
+                text="Accept Next Line"/>
+
         <action id="OodAutocomplete.CycleNextSuggestion"
                 class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.CycleNextSuggestionAction"
                 text="Next Completion Alternative"/>

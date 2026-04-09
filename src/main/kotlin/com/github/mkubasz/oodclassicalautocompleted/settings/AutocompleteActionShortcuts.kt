@@ -8,6 +8,8 @@ internal object AutocompleteActionShortcuts {
     const val ACCEPT_ACTION_ID = "OodAutocomplete.AcceptCompletion"
     const val ACCEPT_INLINE_ACTION_ID = "OodAutocomplete.AcceptInlineSuggestion"
     const val REJECT_ACTION_ID = "OodAutocomplete.RejectCompletion"
+    const val ACCEPT_NEXT_WORD_ACTION_ID = "OodAutocomplete.AcceptNextWord"
+    const val ACCEPT_NEXT_LINE_ACTION_ID = "OodAutocomplete.AcceptNextLine"
     const val CYCLE_NEXT_ACTION_ID = "OodAutocomplete.CycleNextSuggestion"
     const val CYCLE_PREVIOUS_ACTION_ID = "OodAutocomplete.CyclePreviousSuggestion"
 

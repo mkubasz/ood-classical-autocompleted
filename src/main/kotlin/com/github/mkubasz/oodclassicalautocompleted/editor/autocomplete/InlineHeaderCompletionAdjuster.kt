@@ -10,6 +10,7 @@ internal object InlineHeaderCompletionAdjuster {
 
         return sanitizePythonHeaderContinuation(
             linePrefix = request.prefix.substringAfterLast('\n'),
+            lineSuffix = request.suffix.substringBefore('\n'),
             candidateText = text,
         )
     }
@@ -25,9 +26,14 @@ internal object InlineHeaderCompletionAdjuster {
 
     private fun sanitizePythonHeaderContinuation(
         linePrefix: String,
+        lineSuffix: String,
         candidateText: String,
     ): String {
         var roundBalance = unmatchedRoundParens(linePrefix)
+        for (ch in lineSuffix.trimStart()) {
+            if (ch == ')' && roundBalance > 0) roundBalance--
+            else if (!ch.isWhitespace()) break
+        }
         var seenColon = false
         var seenComment = false
         val builder = StringBuilder(candidateText.length)

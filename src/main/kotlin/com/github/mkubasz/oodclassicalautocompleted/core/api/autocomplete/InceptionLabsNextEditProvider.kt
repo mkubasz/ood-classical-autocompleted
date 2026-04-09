@@ -8,7 +8,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicBoolean
 
 class InceptionLabsNextEditProvider(
     private val apiKey: String,
@@ -32,11 +31,9 @@ class InceptionLabsNextEditProvider(
     }
 
     private val log = logger<InceptionLabsNextEditProvider>()
-    private val cancelled = AtomicBoolean(false)
 
     override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
-        cancelled.set(false)
 
         val editableRegion = NextEditInlineAdapter.extractRegion(
             request = request,
@@ -106,12 +103,9 @@ class InceptionLabsNextEditProvider(
         }
     }
 
-    override fun cancel() {
-        cancelled.set(true)
-    }
+    override fun cancel() {}
 
     override fun dispose() {
-        cancel()
         httpClient.close()
     }
 

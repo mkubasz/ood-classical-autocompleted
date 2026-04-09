@@ -38,6 +38,9 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var suggestionCacheTtlMs: Long = 15_000L,
         var suggestionCacheMaxEntries: Int = 32,
         var debugMetricsLogging: Boolean = false,
+        var correctnessFilterEnabled: Boolean = false,
+        var minConfidenceScore: Double = 0.0,
+        var contextBudgetChars: Int = 4_000,
         // Inception Labs autocomplete
         var inceptionLabsApiKey: String = "",
         var inceptionLabsBaseUrl: String = "",

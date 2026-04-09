@@ -69,4 +69,84 @@ class InlineSuggestionBoundaryAdjusterTest {
 
         assertEquals("Handler('example.log')", adjusted.text)
     }
+
+    @Test
+    fun doesNotInsertNewlineWhenCompletingIncompleteDefHeader() {
+        val request = AutocompleteRequest(
+            prefix = "def proje",
+            suffix = "",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val adjusted = InlineSuggestionBoundaryAdjuster.adjust(
+            candidate = InlineCompletionCandidate(
+                text = "ct_streaming_workflow(",
+                insertionOffset = request.prefix.length,
+            ),
+            request = request,
+        )
+
+        assertEquals("ct_streaming_workflow(", adjusted.text)
+    }
+
+    @Test
+    fun doesNotInsertNewlineWhenCompletingIncompleteClassHeader() {
+        val request = AutocompleteRequest(
+            prefix = "class MyMod",
+            suffix = "",
+            filePath = "models.py",
+            language = "py",
+        )
+
+        val adjusted = InlineSuggestionBoundaryAdjuster.adjust(
+            candidate = InlineCompletionCandidate(
+                text = "el(BaseModel):",
+                insertionOffset = request.prefix.length,
+            ),
+            request = request,
+        )
+
+        assertEquals("el(BaseModel):", adjusted.text)
+    }
+
+    @Test
+    fun doesNotInsertNewlineWhenCompletingTokenInsideFunctionCall() {
+        val request = AutocompleteRequest(
+            prefix = "                metadata=RecordedMessageMetad",
+            suffix = "",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val adjusted = InlineSuggestionBoundaryAdjuster.adjust(
+            candidate = InlineCompletionCandidate(
+                text = "ata(",
+                insertionOffset = request.prefix.length,
+            ),
+            request = request,
+        )
+
+        assertEquals("ata(", adjusted.text)
+    }
+
+    @Test
+    fun doesNotInsertNewlineForKeywordArgCompletion() {
+        val request = AutocompleteRequest(
+            prefix = "        result = process_da",
+            suffix = "",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val adjusted = InlineSuggestionBoundaryAdjuster.adjust(
+            candidate = InlineCompletionCandidate(
+                text = "ta(input_file)",
+                insertionOffset = request.prefix.length,
+            ),
+            request = request,
+        )
+
+        assertEquals("ta(input_file)", adjusted.text)
+    }
 }

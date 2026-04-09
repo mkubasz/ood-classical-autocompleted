@@ -49,8 +49,19 @@ internal object InlineHeaderPsiValidator {
         val context = request.inlineContext
         if (snapshot?.project == null || snapshot.project.isDisposed) return false
         if (!language.contains("py") && !language.contains("python")) return false
-        return context?.isDefinitionHeaderLikeContext == true ||
-            context?.isClassBaseListLikeContext == true
+        if (context?.isDefinitionHeaderLikeContext != true && context?.isClassBaseListLikeContext != true) {
+            return false
+        }
+        val linePrefix = request.prefix.substringAfterLast('\n').trimStart()
+        if (isIncompleteHeader(linePrefix)) return false
+        return true
+    }
+
+    private fun isIncompleteHeader(linePrefix: String): Boolean {
+        if (linePrefix.startsWith("def ") && !linePrefix.contains('(')) return true
+        if (linePrefix.startsWith("async def ") && !linePrefix.contains('(')) return true
+        if (linePrefix.startsWith("class ") && !linePrefix.contains('(') && !linePrefix.contains(':')) return true
+        return false
     }
 
     private fun hasRelevantError(

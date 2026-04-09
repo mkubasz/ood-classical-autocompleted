@@ -90,7 +90,7 @@ class GhostTextRenderer(
             val fontMetrics = editor.contentComponent.getFontMetrics(
                 editor.colorsScheme.getFont(EditorFontType.ITALIC)
             )
-            return lines.maxOfOrNull(fontMetrics::stringWidth)?.coerceAtLeast(1) ?: 1
+            return lines.maxOfOrNull { fontMetrics.stringWidth(it) }?.coerceAtLeast(1) ?: 1
         }
 
         override fun calcHeightInPixels(inlay: Inlay<*>): Int =
@@ -99,11 +99,21 @@ class GhostTextRenderer(
         override fun paint(inlay: Inlay<*>, g: Graphics, targetRegion: Rectangle, textAttributes: TextAttributes) {
             val editor = inlay.editor
             g.color = GHOST_TEXT_COLOR
-            g.font = editor.colorsScheme.getFont(EditorFontType.ITALIC)
+            val font = editor.colorsScheme.getFont(EditorFontType.ITALIC)
+            g.font = font
+            val fontMetrics = editor.contentComponent.getFontMetrics(font)
+            val spaceWidth = fontMetrics.charWidth(' ')
 
             lines.forEachIndexed { index, line ->
                 val baseline = targetRegion.y + editor.ascent + index * editor.lineHeight
-                g.drawString(line, targetRegion.x, baseline)
+                val indent = line.takeWhile { it == ' ' || it == '\t' }
+                val indentWidth = if (indent.isEmpty()) 0 else {
+                    indent.sumOf { ch ->
+                        if (ch == '\t') spaceWidth * editor.settings.getTabSize(editor.project)
+                        else spaceWidth
+                    }
+                }
+                g.drawString(line.trimStart(), indentWidth, baseline)
             }
         }
     }
