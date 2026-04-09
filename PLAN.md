@@ -1,126 +1,123 @@
 # OOD Autocomplete Plan
 
-## Current Scope
+## Status Snapshot
 
-The plugin is now scoped to inline code completion only.
+- Scope remains inline autocomplete for JetBrains editors.
+- The plugin logic is language-agnostic at the editor layer. It uses document text, caret context, file path, and provider responses, so it is not Kotlin-only.
+- Latest verification: `./gradlew test --rerun-tasks` and `./gradlew buildPlugin` are passing.
 
-Current supported areas:
+## Done
 
-- autocomplete triggering and dismissal
-- `Tab` accept and `Escape` dismiss
-- multiline ghost-text rendering
-- `NextEdit` and fill-in-the-middle providers
-- provider configuration in settings
-- status bar state for autocomplete
+### 1. Progressive Suggestion Updates (First Pass)
 
-`./gradlew test` is passing.
+Implemented:
 
-## Main Priorities
+- matching typed text trims the active ghost text in place
+- full suggestion consumption clears the ghost text and allows the next request
+- divergence rejects the stale suggestion and rerequests
+- focused coverage exists in `ProgressiveSuggestionUpdateTest`
 
-### 1. Progressive Suggestion Updates
+Current limit:
 
-Goal: make completion feel stable while the user keeps typing.
+- progressive trimming only works when the suggestion inserts at the caret
+- off-caret `NextEdit` suggestions still fall back to dismiss-and-rerequest
 
-- trim the active suggestion when typed text matches its prefix
-- keep the existing suggestion alive until the user diverges
-- avoid full dismiss-and-rerequest cycles on every matching keystroke
+### 2. Better Trigger Heuristics (First Pass)
 
-Acceptance:
+Implemented:
 
-- typing through a suggestion feels incremental
-- flicker is noticeably reduced
-- `Tab` accept can be followed by immediate new suggestions without recovery steps
+- suppression in comments, strings, and import contexts
+- suppression in oversized files and generated files
+- suppression in low-signal whitespace regions
+- eager triggering in higher-signal structural / newline contexts
+- focused coverage exists in `AutocompleteTriggerHeuristicsTest`
 
-### 2. Better Trigger Heuristics
+### 3. Alternative Suggestions (First Pass)
 
-Goal: request completions in high-signal moments and suppress them in low-value ones.
+Implemented:
 
-- be more eager after newline, indent, and structural openings
-- be more conservative in comments, strings, imports, and noisy edit regions
-- suppress requests in oversized or generated files
+- active suggestion state now supports multiple alternatives instead of only one suggestion
+- cycle-next and cycle-previous actions are available
+- cycling swaps the rendered ghost text without corrupting inlay state
+- focused coverage exists in `SuggestionAlternativesTest`
 
-Acceptance:
+Current limit:
 
-- completions appear more consistently during normal coding
-- low-value suggestions appear less often
+- cycling only does anything when multiple alternatives are actually available for the same context
+- today that mainly depends on multi-result provider flows rather than a broader ranking system
 
-### 3. Stronger Multiline Behavior
+### 4. Acceptance And Navigation (First Pass)
 
-Goal: make multiline suggestions read like real code before acceptance.
+Implemented:
 
-- preserve indentation more precisely
-- improve blank-line handling
-- keep block inlays aligned naturally with the insertion point
+- accept on `Tab`
+- optional accept on `Right Arrow`
+- optional accept on `End / Fn+Right`
+- dismiss on `Escape`
+- actions are scoped to the editor that owns the active ghost text
 
-Acceptance:
+Settings support:
 
-- multiline previews are readable
-- accepted multiline completions land with correct indentation
+- keyboard shortcut options are exposed in plugin settings
+- shortcut parsing accepts friendly forms like `cmd+y`, `cmd+;`, and `cmd+]`
+- custom shortcuts are registered per live editor, which is more reliable across macOS keyboard layouts
 
-### 4. Alternative Suggestions
+## Still To Do
 
-Goal: allow quick fallback when the first completion is wrong.
+### 1. Progressive Updates For Off-Caret `NextEdit`
 
-- keep a small ranked set of recent suggestions
-- add cycle-next and cycle-previous actions
-- preserve stable rendering while cycling
+Need to implement:
 
-Acceptance:
+- trimming and keeping suggestions whose insertion offset differs from the caret
+- smoother `NextEdit` behavior without full dismiss-and-rerequest loops
+- tests for edit spans away from the caret
 
-- the user can switch suggestions without forcing a brand new request
-- cycling does not corrupt the active inlay state
+### 2. Stronger Multiline Behavior
 
-### 5. Acceptance And Navigation
+Need to implement:
 
-Goal: make accept/dismiss behavior feel closer to native editor completion.
+- more precise indentation preservation for multiline suggestions
+- better blank-line handling
+- more natural multiline inlay alignment near the insertion point
+- focused tests for multiline rendering and multiline acceptance
 
-- optionally support accept on `Right` or `End`
-- evaluate double-`Tab` or repeated-accept flows where useful
-- keep rejection and caret-move behavior predictable
+### 3. Caching And Latency
 
-Acceptance:
+Need to implement:
 
-- accept flows feel fast and deliberate
-- keyboard interactions do not leave stale ghost text behind
+- a small short-lived cache keyed by nearby prefix/suffix context
+- reuse when context changes only slightly
+- lightweight debug logging for cache hits and misses
+- tests for cache behavior and stale-response rejection
 
-### 6. Caching And Latency
+### 4. Acceptance Flow Polish
 
-Goal: reduce needless provider calls and shorten time-to-hint.
+Need to evaluate:
 
-- add a small short-lived cache keyed by nearby prefix/suffix context
-- reuse results when the context only changes slightly
-- expose lightweight debug logging for cache hits and misses
-
-Acceptance:
-
-- repeated nearby edits feel faster
-- network-backed completion is less jittery
+- double-`Tab` or repeated-accept flows where they help `NextEdit`
+- whether alternative suggestion generation should be widened beyond the current multi-result path
+- additional stale ghost-text cleanup edge cases during fast caret or navigation changes
 
 ## Testing Roadmap
 
-Add tests for:
+Covered now:
 
-- progressive suggestion trimming while typing
-- trigger suppression in comments, strings, and imports
+- progressive trimming while typing at the caret
+- trigger suppression in comments, strings, imports, generated files, and low-signal whitespace
+- alternative suggestion cycling state
+- shortcut normalization and acceptance shortcut options
+
+Still needed:
+
 - multiline placement and indentation
-- alternative suggestion cycling
 - acceptance after multiline and `NextEdit` suggestions
-- cache behavior and stale-response rejection
-
-Manual verification should cover:
-
-- typing, backspace, and newline triggers
-- `Tab` accept and `Escape` dismiss
-- multiline preview rendering
-- `NextEdit` insertion inside editable spans
-- provider switching in settings
+- cache behavior
+- more manual IDE verification across multiple languages and keyboard layouts
 
 ## Suggested Next Step
 
 The highest-value next slice is:
 
-1. progressive suggestion updates while typing
-2. better trigger heuristics
-3. alternative suggestion cycling
-
-That order improves the daily typing experience first, then reduces noise, then gives a fallback when the top result is wrong.
+1. off-caret `NextEdit` progressive updates
+2. multiline rendering and acceptance polish
+3. short-lived caching and latency instrumentation

@@ -10,12 +10,22 @@ internal object NextEditInlineAdapter {
         val cursorOffset: Int,
     )
 
+    data class DerivedEdit(
+        val startOffset: Int,
+        val endOffset: Int,
+        val replacementText: String,
+    )
+
     data class DerivedInsertion(
         val text: String,
         val offset: Int,
     )
 
-    fun extractRegion(request: AutocompleteRequest, radius: Int): EditableRegion {
+    fun extractRegion(
+        request: AutocompleteRequest,
+        linesAboveCursor: Int,
+        linesBelowCursor: Int,
+    ): EditableRegion {
         val fullText = request.prefix + request.suffix
         val cursorOffset = request.cursorOffset ?: request.prefix.length
         val lineStarts = mutableListOf(0)
@@ -29,8 +39,8 @@ internal object NextEditInlineAdapter {
             -1 -> lineStarts.indexOfLast { it <= cursorOffset }.coerceAtLeast(0)
             else -> exactLine
         }
-        val editStartLine = maxOf(0, cursorLine - radius)
-        val editEndLineExclusive = minOf(lineStarts.size, cursorLine + radius + 1)
+        val editStartLine = maxOf(0, cursorLine - linesAboveCursor)
+        val editEndLineExclusive = minOf(lineStarts.size, cursorLine + linesBelowCursor + 1)
         val regionStartOffset = lineStarts[editStartLine]
         val regionEndOffset = if (editEndLineExclusive < lineStarts.size) {
             lineStarts[editEndLineExclusive] - 1
@@ -53,18 +63,43 @@ internal object NextEditInlineAdapter {
             CURSOR_MARKER +
             region.text.substring(region.cursorOffset)
 
-    fun deriveInsertion(region: EditableRegion, updatedRegionText: String): DerivedInsertion? {
+    fun deriveEdit(region: EditableRegion, updatedRegionText: String): DerivedEdit? {
         val original = region.text.replace("\r", "")
         val updated = updatedRegionText.replace("\r", "").trim('\n')
-        if (updated == original) {
-            return DerivedInsertion("", region.startOffset + region.cursorOffset)
+        if (updated == original) return null
+
+        val commonPrefixLength = commonPrefixLength(original, updated)
+        val commonSuffixLength = commonSuffixLength(
+            original = original,
+            updated = updated,
+            prefixLength = commonPrefixLength,
+        )
+
+        val replacementStart = region.startOffset + commonPrefixLength
+        val replacementEnd = region.startOffset + original.length - commonSuffixLength
+        val replacementText = updated.substring(
+            commonPrefixLength,
+            updated.length - commonSuffixLength,
+        )
+
+        return DerivedEdit(
+            startOffset = replacementStart,
+            endOffset = replacementEnd,
+            replacementText = replacementText,
+        ).takeIf {
+            replacementStart <= replacementEnd
         }
+    }
+
+    fun deriveInlineInsertion(region: EditableRegion, updatedRegionText: String): DerivedInsertion? {
+        val original = region.text.replace("\r", "")
+        val updated = updatedRegionText.replace("\r", "").trim('\n')
+        if (updated == original) return null
 
         return getGhostTextOrNull(
             oldContent = original,
             newContent = updated,
             caretOffset = region.cursorOffset,
-            atEndOfDocument = region.after.isEmpty(),
         )?.let { (text, insertionOffset) ->
             DerivedInsertion(
                 text = text,
@@ -73,11 +108,30 @@ internal object NextEditInlineAdapter {
         }
     }
 
+    private fun commonPrefixLength(original: String, updated: String): Int {
+        val max = minOf(original.length, updated.length)
+        var index = 0
+        while (index < max && original[index] == updated[index]) {
+            index++
+        }
+        return index
+    }
+
+    private fun commonSuffixLength(original: String, updated: String, prefixLength: Int): Int {
+        val max = minOf(original.length, updated.length) - prefixLength
+        var index = 0
+        while (index < max &&
+            original[original.length - 1 - index] == updated[updated.length - 1 - index]
+        ) {
+            index++
+        }
+        return index
+    }
+
     private fun getGhostTextOrNull(
         oldContent: String,
         newContent: String,
         caretOffset: Int,
-        atEndOfDocument: Boolean,
     ): Pair<String, Int>? {
         val caretInSpan = caretOffset in 0 until oldContent.length
         if (caretInSpan) {
@@ -100,11 +154,7 @@ internal object NextEditInlineAdapter {
             if (prefix.length + suffix.length > newContent.length) continue
 
             val insertedText = newContent.substring(prefix.length, newContent.length - suffix.length)
-            val caretAtNewline = prefix.isEmpty() || prefix.last() == '\n'
-            if ('\n' in insertedText && !caretAtNewline && !atEndOfDocument) {
-                return null
-            }
-            if (insertedText.isNotEmpty()) {
+            if (insertedText.isNotEmpty() && '\n' !in insertedText) {
                 return insertedText to insertionOffset
             }
         }

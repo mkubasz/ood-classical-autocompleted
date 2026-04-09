@@ -1,9 +1,16 @@
 package com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete
 
 interface AutocompleteProvider {
-    suspend fun complete(request: AutocompleteRequest): AutocompleteResult?
+    val capabilities: Set<AutocompleteCapability>
+
+    suspend fun complete(request: AutocompleteRequest): CompletionResponse?
     fun cancel()
     fun dispose()
+}
+
+enum class AutocompleteCapability {
+    INLINE,
+    NEXT_EDIT,
 }
 
 data class AutocompleteRequest(
@@ -12,17 +19,57 @@ data class AutocompleteRequest(
     val filePath: String?,
     val language: String?,
     val cursorOffset: Int? = null,
+    val inlineContext: InlineModelContext? = null,
     val recentlyViewedSnippets: List<CodeSnippet>? = null,
     val editDiffHistory: List<String>? = null,
 )
+
+data class InlineModelContext(
+    val lexicalContext: InlineLexicalContext = InlineLexicalContext.UNKNOWN,
+    val enclosingNames: List<String> = emptyList(),
+    val enclosingKinds: List<String> = emptyList(),
+    val isDecoratorLikeContext: Boolean = false,
+    val headerValidationRetry: Boolean = false,
+    val isClassBaseListLikeContext: Boolean = false,
+    val isAfterMemberAccess: Boolean = false,
+    val receiverExpression: String? = null,
+    val receiverMemberNames: List<String> = emptyList(),
+    val isInParameterListLikeContext: Boolean = false,
+    val isDefinitionHeaderLikeContext: Boolean = false,
+    val classBaseReferencePrefix: String? = null,
+    val matchingTypeNames: List<String> = emptyList(),
+    val headerValidationError: String? = null,
+    val expectedHeaderContinuation: String? = null,
+    val resolvedReferenceName: String? = null,
+    val resolvedFilePath: String? = null,
+    val resolvedSnippet: String? = null,
+)
+
+enum class InlineLexicalContext {
+    CODE,
+    COMMENT,
+    STRING,
+    UNKNOWN,
+}
 
 data class CodeSnippet(
     val filePath: String,
     val content: String,
 )
 
-data class AutocompleteResult(
+data class CompletionResponse(
+    val inlineCandidates: List<InlineCompletionCandidate> = emptyList(),
+    val nextEditCandidates: List<NextEditCompletionCandidate> = emptyList(),
+)
+
+data class InlineCompletionCandidate(
     val text: String,
-    val insertionOffset: Int? = null,
+    val insertionOffset: Int,
     val isExactInsertion: Boolean = false,
+)
+
+data class NextEditCompletionCandidate(
+    val startOffset: Int,
+    val endOffset: Int,
+    val replacementText: String,
 )

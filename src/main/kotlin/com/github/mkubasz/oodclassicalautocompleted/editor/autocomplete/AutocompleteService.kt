@@ -1,19 +1,41 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
+import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteCapability
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteProvider
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteProviderFactory
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
+import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.CompletionResponse
+import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
 import com.github.mkubasz.oodclassicalautocompleted.settings.AutocompleteProviderType
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
+import com.intellij.codeInsight.inline.completion.InlineCompletion
+import com.intellij.codeInsight.inline.completion.InlineCompletionEventListener
+import com.intellij.codeInsight.inline.completion.InlineCompletionEventType
+import com.intellij.codeInsight.inline.completion.InlineCompletionRequest
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.ScrollType
+import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
-import kotlinx.coroutines.*
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
+import java.util.Collections
+import java.util.IdentityHashMap
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
@@ -21,246 +43,271 @@ class AutocompleteService(private val project: Project) : Disposable {
 
     private val log = logger<AutocompleteService>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val currentRenderer = AtomicReference<GhostTextRenderer?>(null)
     private val rejectionCache = RejectionCache()
+    private val inlineStates = ConcurrentHashMap<Editor, InlineState>()
+    private val nextEditStates = ConcurrentHashMap<Editor, NextEditState>()
+    private val supportedEditors = Collections.newSetFromMap(IdentityHashMap<Editor, Boolean>())
+    private val caretSuppression = Collections.newSetFromMap(IdentityHashMap<Editor, Boolean>())
+    private val requestSequence = AtomicLong(0)
+
+    private var inlineCache = createInlineCache()
+    private var currentSettingsHash: Int? = null
     private var fimProvider: AutocompleteProvider? = null
     private var nextEditProvider: AutocompleteProvider? = null
     private var currentProviderType: AutocompleteProviderType? = null
-    private var pendingJob: Job? = null
-    private val requestSequence = AtomicLong(0)
 
     val hasActiveSuggestion: Boolean
-        get() = currentRenderer.get()?.isActive == true
+        get() = inlineStates.values.any { it.visible } || nextEditStates.isNotEmpty()
 
-    fun requestCompletion(editor: Editor, offset: Int) {
-        val settings = PluginSettings.getInstance()
-        if (!settings.state.autocompleteEnabled) {
-            log.debug("Autocomplete disabled in settings")
-            clearSuggestion()
-            return
-        }
-        if (!settings.isConfigured) {
-            log.debug("Autocomplete provider is not configured")
-            clearSuggestion()
-            return
-        }
-        if (!shouldRequestCompletion(editor, offset)) {
-            clearSuggestion()
-            return
-        }
-
-        pendingJob?.cancel()
-
-        val debounceMs = settings.state.debounceMs
-        val requestId = requestSequence.incrementAndGet()
-        val documentStamp = editor.document.modificationStamp
-        pendingJob = scope.launch {
-            delay(debounceMs)
-            if (!isActive) return@launch
-
-            if (editor.isDisposed) return@launch
-            if (!shouldShowForCurrentState(editor, offset, documentStamp, requestId)) {
-                log.debug("Stale request: stamp or sequence mismatch")
-                return@launch
-            }
-            val request = ApplicationManager.getApplication().runReadAction<AutocompleteRequest?> {
-                buildRequest(editor, offset)
-            }
-            if (request == null) {
-                log.info("buildRequest returned null at offset=$offset")
-                return@launch
-            }
-
-            ensureProviders()
-            if (fimProvider == null && nextEditProvider == null) {
-                log.debug("No autocomplete providers are available for the current settings")
-                return@launch
-            }
-
-            val result = AutocompleteProviderCoordinator.complete(
-                request = request,
-                fimProvider = fimProvider,
-                nextEditProvider = nextEditProvider,
+    fun installInlineSupport(editor: Editor) {
+        if (editor.project != project || editor.isViewer) return
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            ApplicationManager.getApplication().invokeLater(
+                { installInlineSupport(editor) },
+                project.disposed
             )
-            if (result == null) {
-                log.debug("All autocomplete providers returned null")
-                return@launch
-            }
-            val suggestion = if (result.isExactInsertion) {
-                result.text.trimEnd().take(MAX_SUGGESTION_CHARS)
-            } else {
-                AutocompleteSuggestionNormalizer.normalize(
-                    rawText = result.text,
-                    request = request,
-                    maxChars = MAX_SUGGESTION_CHARS,
-                )
-            }
-            val insertionOffset = result.insertionOffset ?: offset
+            return
+        }
+        val editorEx = editor as? EditorEx ?: return
+        synchronized(supportedEditors) {
+            if (!supportedEditors.add(editor)) return
+        }
 
-            if (suggestion.isBlank()) return@launch
-            withContext(Dispatchers.Main) {
-                if (!editor.isDisposed && shouldShowForCurrentState(editor, offset, documentStamp, requestId)) {
-                    showSuggestion(editor, offset, insertionOffset, suggestion)
+        InlineCompletion.install(editorEx, scope)
+        InlineCompletion.getHandlerOrNull(editor)?.addEventListener(
+            object : InlineCompletionEventListener {
+                override fun on(event: InlineCompletionEventType) {
+                    when (event) {
+                        is InlineCompletionEventType.Show -> onInlineShown(editor)
+                        is InlineCompletionEventType.Hide -> clearInlineState(editor)
+                        InlineCompletionEventType.Insert -> clearInlineState(editor)
+                        else -> Unit
+                    }
                 }
             }
-        }
+        )
     }
 
-    fun acceptSuggestion(editor: Editor): Boolean {
-        val renderer = currentRenderer.get() ?: return false
-        if (!renderer.isActive) return false
-        if (renderer.editor !== editor) return false
-        if (editor.caretModel.offset != renderer.anchorOffset) {
-            clearSuggestion()
-            return false
-        }
-
-        renderer.apply(project, editor)
-        clearSuggestion()
-        return true
-    }
-
-    fun rejectSuggestion(dismissReason: DismissReason = DismissReason.ESCAPE): Boolean {
-        val renderer = currentRenderer.get() ?: return false
-        if (!renderer.isActive) return false
-
-        rejectionCache.recordRejection(renderer.suggestionKey, dismissReason)
-        clearSuggestion()
-        return true
-    }
-
-    fun onCaretMoved(editor: Editor) {
-        val renderer = currentRenderer.get() ?: return
-        if (renderer.editor !== editor) return
-        if (editor.caretModel.offset != renderer.anchorOffset) {
-            rejectSuggestion(DismissReason.CARET_MOVED)
-        }
-    }
-
-    fun onFocusLost(editor: Editor) {
-        val renderer = currentRenderer.get() ?: return
-        if (renderer.editor === editor) {
-            rejectSuggestion(DismissReason.FOCUS_LOST)
-        }
-    }
-
-    fun onTyping(editor: Editor) {
-        val renderer = currentRenderer.get() ?: return
-        if (renderer.editor === editor) {
-            rejectSuggestion(DismissReason.TYPING)
-        }
-    }
-
-    fun onSelectionChanged(editor: Editor) {
-        pendingJob?.cancel()
-        val renderer = currentRenderer.get() ?: return
-        if (renderer.editor === editor) {
-            rejectSuggestion(DismissReason.SELECTION_CHANGED)
-        }
-    }
-
-    fun showSuggestion(editor: Editor, anchorOffset: Int, insertionOffset: Int, text: String) {
-        ApplicationManager.getApplication().runReadAction {
-            if (!shouldRequestCompletionUnsafe(editor, anchorOffset)) return@runReadAction
-            if (insertionOffset !in 0..editor.document.textLength) return@runReadAction
-            val key = RejectionCache.SuggestionKey(
-                editor.document.text.hashCode(),
-                anchorOffset,
-                31 * insertionOffset + text.hashCode(),
+    fun unregisterEditor(editor: Editor) {
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            ApplicationManager.getApplication().invokeLater(
+                { unregisterEditor(editor) },
+                project.disposed
             )
-            if (!rejectionCache.shouldShow(key)) return@runReadAction
-            if (text.isBlank()) return@runReadAction
-
-            val suffix = editor.document.text.substring(insertionOffset)
-            if (suffix.startsWith(text)) return@runReadAction
-
-            clearSuggestion()
-            val renderer = GhostTextRenderer(editor, anchorOffset, insertionOffset, text)
-            currentRenderer.set(renderer)
-            renderer.show()
+            return
         }
+        synchronized(supportedEditors) {
+            supportedEditors.remove(editor)
+        }
+        clearInlineState(editor)
+        clearNextEdit(editor)
+        InlineCompletion.remove(editor)
     }
 
-    private fun ensureProviders() {
+    suspend fun fetchInlineCandidate(request: InlineCompletionRequest): InlineCompletionCandidate? {
         val settings = PluginSettings.getInstance().state
-        if (settings.autocompleteProvider != currentProviderType) {
-            fimProvider?.dispose()
-            nextEditProvider?.dispose()
-            fimProvider = AutocompleteProviderFactory.createFimProvider(settings)
-            nextEditProvider = AutocompleteProviderFactory.createNextEditProvider(settings)
-            currentProviderType = settings.autocompleteProvider
-        }
-    }
+        if (!settings.autocompleteEnabled || !PluginSettings.getInstance().isConfigured) return null
 
-    private fun clearSuggestion() {
-        currentRenderer.getAndSet(null)?.dispose()
-    }
+        val requestStartedAt = System.currentTimeMillis()
+        delay(settings.debounceMs)
 
-    private fun buildRequest(editor: Editor, offset: Int): AutocompleteRequest? {
-        val documentText = editor.document.text
-        if (offset < 0 || offset > documentText.length) return null
-        if (!shouldRequestCompletion(editor, offset)) return null
+        val snapshot = ApplicationManager.getApplication().runReadAction<CompletionContextSnapshot?> {
+            buildSnapshot(request)
+        } ?: return null
 
-        val prefix = documentText.substring(0, offset)
-        val suffix = documentText.substring(offset)
-        if (prefix.isBlank() && suffix.isBlank()) return null
-        if (documentText.length > MAX_DOCUMENT_CHARS) return null
-        if (prefix.takeLast(LOOKBACK_FOR_NON_WHITESPACE).isBlank() && suffix.take(LOOKBACK_FOR_NON_WHITESPACE).isBlank()) {
+        val triggerDecision = AutocompleteTriggerHeuristics.evaluate(
+            documentText = snapshot.documentText,
+            offset = snapshot.caretOffset,
+            filePath = snapshot.filePath,
+            maxDocumentChars = MAX_DOCUMENT_CHARS,
+            lookbackForNonWhitespace = LOOKBACK_FOR_NON_WHITESPACE,
+        )
+        if (!triggerDecision.shouldRequest) {
+            metric("inline.skip", "reason" to triggerDecision.reason)
             return null
         }
 
-        val request = AutocompleteRequest(
-            prefix = prefix,
-            suffix = suffix,
-            filePath = editor.virtualFile?.path,
-            language = editor.virtualFile?.extension,
+        ensureProviders()
+        val stateHash = PluginSettings.getInstance().state.hashCode()
+        val autocompleteRequest = buildAutocompleteRequest(snapshot)
+        val editor = request.editor
+        val requestId = requestSequence.incrementAndGet()
+
+        launchNextEditFetch(
+            editor = editor,
+            autocompleteRequest = autocompleteRequest,
+            snapshot = snapshot,
+            requestId = requestId,
         )
 
-        // For Inception Labs, enrich with context tracker data for Next Edit
-        val settings = PluginSettings.getInstance().state
-        if (settings.autocompleteProvider == AutocompleteProviderType.INCEPTION_LABS) {
-            val tracker = project.service<EditContextTracker>()
-            return request.copy(
-                cursorOffset = offset,
-                recentlyViewedSnippets = tracker.recentSnippets,
-                editDiffHistory = tracker.recentDiffs,
-            )
-        }
+        val inlineProvider = fimProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
+        val inlineFallbackProvider = nextEditProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
+        if (inlineProvider == null && inlineFallbackProvider == null) return null
+        val cacheKey = InlineSuggestionCache.Key(
+            providerKey = PluginSettings.getInstance().state.autocompleteProvider.name,
+            settingsHash = stateHash,
+            filePath = snapshot.filePath,
+            documentStamp = snapshot.documentStamp,
+            caretOffset = snapshot.caretOffset,
+            prefixHash = snapshot.prefixWindow.hashCode(),
+            suffixHash = snapshot.suffixWindow.hashCode(),
+        )
 
-        return request
+        inlineCache.get(cacheKey)?.let { cached ->
+            val filtered = filterInlineCandidates(
+                snapshot,
+                prepareInlineCandidates(snapshot, cached, autocompleteRequest),
+            )
+            if (filtered.isNotEmpty()) {
+                storeInlineState(editor, requestId, filtered)
+                metric("inline.cache.hit", "count" to filtered.size)
+                delayForDwell(requestStartedAt)
+                return filtered.first()
+            }
+        }
+        metric("inline.cache.miss", "offset" to snapshot.caretOffset)
+
+        val prepared = requestInlineCandidates(
+            snapshot = snapshot,
+            request = autocompleteRequest,
+            fimProvider = inlineProvider,
+            nextEditProvider = inlineFallbackProvider,
+        )
+        if (prepared.isEmpty()) return null
+
+        inlineCache.put(cacheKey, prepared)
+        storeInlineState(editor, requestId, prepared)
+        delayForDwell(requestStartedAt)
+        return prepared.first()
     }
 
-    private fun shouldRequestCompletion(editor: Editor, offset: Int): Boolean =
-        ApplicationManager.getApplication().runReadAction<Boolean> {
-            if (project.isDisposed || editor.isDisposed || editor.isViewer) return@runReadAction false
-            if (editor.selectionModel.hasSelection()) return@runReadAction false
-            if (offset != editor.caretModel.offset) return@runReadAction false
-            offset in 0..editor.document.textLength
+    fun canAcceptOnTab(editor: Editor): Boolean =
+        inlineStates[editor]?.visible == true ||
+            nextEditStates[editor]?.preview != null ||
+            nextEditStates[editor]?.candidate != null
+
+    fun canAcceptInline(editor: Editor): Boolean =
+        inlineStates[editor]?.visible == true
+
+    fun hasActiveSuggestion(editor: Editor): Boolean =
+        inlineStates[editor]?.visible == true ||
+            nextEditStates[editor]?.candidate != null ||
+            nextEditStates[editor]?.preview != null
+
+    fun hasAlternativeSuggestions(editor: Editor): Boolean =
+        (inlineStates[editor]?.candidates?.size ?: 0) > 1
+
+    fun acceptOnTab(editor: Editor): Boolean {
+        val previewState = nextEditStates[editor]
+        if (previewState?.preview != null) {
+            suppressCaretHandling(editor) {
+                previewState.preview.apply(project)
+            }
+            metric("next_edit.accepted", "start" to previewState.candidate.startOffset)
+            clearNextEdit(editor)
+            return true
         }
 
-    private fun shouldShowForCurrentState(editor: Editor, offset: Int, documentStamp: Long, requestId: Long): Boolean =
-        ApplicationManager.getApplication().runReadAction<Boolean> {
-            if (!shouldRequestCompletionUnsafe(editor, offset)) return@runReadAction false
-            if (editor.document.modificationStamp != documentStamp) return@runReadAction false
-            if (requestSequence.get() != requestId) return@runReadAction false
-            true
+        if (inlineStates[editor]?.visible == true) {
+            metric("inline.accepted", "offset" to editor.caretModel.offset)
+            InlineCompletion.getHandlerOrNull(editor)?.insert()
+            return true
         }
 
-    private fun shouldRequestCompletionUnsafe(editor: Editor, offset: Int): Boolean {
-        if (project.isDisposed || editor.isDisposed || editor.isViewer) return false
-        if (editor.selectionModel.hasSelection()) return false
-        if (offset != editor.caretModel.offset) return false
-        return offset in 0..editor.document.textLength
+        val candidate = previewState?.candidate ?: return false
+        val preview = NextEditPreview(editor, candidate)
+        suppressCaretHandling(editor) {
+            preview.show()
+            preview.jumpToPreview()
+            editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+        }
+        nextEditStates[editor] = previewState.copy(preview = preview)
+        metric("next_edit.previewed", "start" to candidate.startOffset, "end" to candidate.endOffset)
+        return true
+    }
+
+    fun acceptInline(editor: Editor): Boolean {
+        if (inlineStates[editor]?.visible != true) return false
+        metric("inline.accepted.inline_only", "offset" to editor.caretModel.offset)
+        InlineCompletion.getHandlerOrNull(editor)?.insert()
+        return true
+    }
+
+    fun cycleToNextSuggestion(editor: Editor): Boolean = false
+
+    fun cycleToPreviousSuggestion(editor: Editor): Boolean = false
+
+    fun rejectSuggestion(editor: Editor, dismissReason: DismissReason = DismissReason.ESCAPE): Boolean {
+        var rejected = false
+
+        inlineStates.remove(editor)?.let { state ->
+            state.rejectionKey?.let { rejectionCache.recordRejection(it, dismissReason) }
+            InlineCompletion.getHandlerOrNull(editor)?.cancel()
+            rejected = true
+            metric("inline.rejected", "reason" to dismissReason)
+        }
+
+        if (clearNextEdit(editor)) {
+            rejected = true
+            metric("next_edit.rejected", "reason" to dismissReason)
+        }
+
+        return rejected
+    }
+
+    fun rejectSuggestion(dismissReason: DismissReason = DismissReason.ESCAPE): Boolean {
+        val activeEditor = inlineStates.entries.firstOrNull { it.value.visible }?.key
+            ?: nextEditStates.keys.firstOrNull()
+            ?: return false
+        return rejectSuggestion(activeEditor, dismissReason)
+    }
+
+    fun onCaretMoved(editor: Editor) {
+        synchronized(caretSuppression) {
+            if (caretSuppression.remove(editor)) return
+        }
+        clearNextEdit(editor)
+    }
+
+    fun onFocusLost(editor: Editor) {
+        clearNextEdit(editor)
+    }
+
+    fun onSelectionChanged(editor: Editor) {
+        clearNextEdit(editor)
+    }
+
+    fun onDocumentChanged(
+        editor: Editor,
+        changeOffset: Int,
+        oldLength: Int,
+        newText: String,
+    ): DocumentChangeResult {
+        if (oldLength != 0 || newText.isNotEmpty() || changeOffset >= 0) {
+            clearNextEdit(editor)
+        }
+        return DocumentChangeResult.REQUEST_COMPLETION
+    }
+
+    fun requestCompletion(editor: Editor, offset: Int, preserveCurrentSuggestion: Boolean = false) {
+        if (!preserveCurrentSuggestion) {
+            clearNextEdit(editor)
+        }
+        if (offset !in 0..editor.document.textLength) return
     }
 
     override fun dispose() {
-        pendingJob?.cancel()
         scope.cancel()
         fimProvider?.dispose()
         nextEditProvider?.dispose()
-        fimProvider = null
-        nextEditProvider = null
-        clearSuggestion()
+        inlineStates.keys.toList().forEach(::clearInlineState)
+        nextEditStates.keys.toList().forEach(::clearNextEdit)
+        inlineCache.clear()
+    }
+
+    enum class DocumentChangeResult {
+        KEEP_SUGGESTION,
+        REQUEST_COMPLETION,
     }
 
     enum class DismissReason {
@@ -269,11 +316,291 @@ class AutocompleteService(private val project: Project) : Disposable {
         FOCUS_LOST,
         TYPING,
         SELECTION_CHANGED,
+        ALTERNATIVE_REQUESTED,
     }
 
+    private fun ensureProviders() {
+        val settings = PluginSettings.getInstance().state
+        val settingsHash = settings.hashCode()
+        if (currentProviderType == settings.autocompleteProvider && currentSettingsHash == settingsHash) return
+
+        fimProvider?.dispose()
+        nextEditProvider?.dispose()
+        fimProvider = AutocompleteProviderFactory.createFimProvider(settings)
+        nextEditProvider = AutocompleteProviderFactory.createNextEditProvider(settings)
+        currentProviderType = settings.autocompleteProvider
+        currentSettingsHash = settingsHash
+        inlineCache = createInlineCache()
+    }
+
+    private fun buildSnapshot(request: InlineCompletionRequest): CompletionContextSnapshot? {
+        val editor = request.editor
+        if (editor.project != project || editor.isViewer) return null
+        if (editor.selectionModel.hasSelection()) return null
+
+        val documentText = request.document.text
+        val caretOffset = request.endOffset.coerceIn(0, documentText.length)
+        if (caretOffset != editor.caretModel.offset) return null
+
+        return CompletionContextSnapshot(
+            filePath = request.file.virtualFile?.path,
+            language = request.file.language.id,
+            documentText = documentText,
+            documentStamp = request.document.modificationStamp,
+            caretOffset = caretOffset,
+            prefix = documentText.substring(0, caretOffset),
+            suffix = documentText.substring(caretOffset),
+            prefixWindow = documentText.substring(0, caretOffset).takeLast(CONTEXT_WINDOW_CHARS),
+            suffixWindow = documentText.substring(caretOffset).take(CONTEXT_WINDOW_CHARS),
+            inlineContext = PsiInlineContextBuilder.build(
+                project = project,
+                document = request.document,
+                documentText = documentText,
+                caretOffset = caretOffset,
+            ),
+            project = project,
+        )
+    }
+
+    private fun buildAutocompleteRequest(snapshot: CompletionContextSnapshot): AutocompleteRequest {
+        val request = AutocompleteRequest(
+            prefix = snapshot.prefix,
+            suffix = snapshot.suffix,
+            filePath = snapshot.filePath,
+            language = snapshot.language?.takeIf { it.isNotBlank() },
+            cursorOffset = snapshot.caretOffset,
+            inlineContext = snapshot.inlineContext,
+        )
+
+        if (PluginSettings.getInstance().state.autocompleteProvider != AutocompleteProviderType.INCEPTION_LABS) {
+            return request
+        }
+
+        val tracker = project.service<EditContextTracker>()
+        snapshot.filePath?.let { filePath ->
+            tracker.onFileViewed(
+                filePath = filePath,
+                content = snapshot.documentText,
+                caretOffset = snapshot.caretOffset,
+            )
+        }
+        return request.copy(
+            recentlyViewedSnippets = tracker.recentSnippets.takeLast(MAX_NEXT_EDIT_SNIPPETS),
+            editDiffHistory = tracker.recentDiffs.takeLast(MAX_NEXT_EDIT_DIFFS),
+        )
+    }
+
+    private fun prepareInlineCandidates(
+        snapshot: CompletionContextSnapshot,
+        rawCandidates: List<InlineCompletionCandidate>,
+        request: AutocompleteRequest,
+    ): List<InlineCompletionCandidate> = InlineCandidatePreparation.prepare(
+        rawCandidates = rawCandidates,
+        request = request,
+        snapshot = snapshot,
+        maxSuggestionChars = MAX_SUGGESTION_CHARS,
+    )
+
+    private fun filterInlineCandidates(
+        snapshot: CompletionContextSnapshot,
+        candidates: List<InlineCompletionCandidate>,
+    ): List<InlineCompletionCandidate> =
+        candidates.filter { candidate ->
+            if (candidate.insertionOffset !in 0..snapshot.documentText.length) return@filter false
+
+            val suffix = snapshot.documentText.substring(candidate.insertionOffset)
+            if (suffix.startsWith(candidate.text)) return@filter false
+
+            val rejectionKey = suggestionKey(
+                documentHash = snapshot.documentText.hashCode(),
+                insertionOffset = candidate.insertionOffset,
+                text = candidate.text,
+            )
+            rejectionCache.shouldShow(rejectionKey)
+        }
+
+    private suspend fun requestInlineCandidates(
+        snapshot: CompletionContextSnapshot,
+        request: AutocompleteRequest,
+        fimProvider: AutocompleteProvider?,
+        nextEditProvider: AutocompleteProvider?,
+    ): List<InlineCompletionCandidate> {
+        val selection = AutocompleteProviderCoordinator.selectInlineCandidates(
+            snapshot = snapshot,
+            request = request,
+            fimProvider = fimProvider,
+            nextEditProvider = nextEditProvider,
+            onProviderFailure = { sourceName, error ->
+                log.warn("Autocomplete request failed for $sourceName", error)
+            },
+            shouldShow = { candidate ->
+                val rejectionKey = suggestionKey(
+                    documentHash = snapshot.documentText.hashCode(),
+                    insertionOffset = candidate.insertionOffset,
+                    text = candidate.text,
+                )
+                rejectionCache.shouldShow(rejectionKey)
+            },
+        ) ?: return emptyList()
+
+        metric("inline.source", "provider" to selection.sourceName)
+        return selection.candidates
+    }
+
+    private fun storeInlineState(editor: Editor, requestId: Long, candidates: List<InlineCompletionCandidate>) {
+        val primary = candidates.firstOrNull() ?: return
+        val documentHash = editor.document.text.hashCode()
+        inlineStates[editor] = InlineState(
+            requestId = requestId,
+            candidates = candidates,
+            rejectionKey = suggestionKey(documentHash, primary.insertionOffset, primary.text),
+        )
+    }
+
+    private fun onInlineShown(editor: Editor) {
+        val current = inlineStates[editor] ?: return
+        if (current.visible) return
+        inlineStates[editor] = current.copy(
+            visible = true,
+            shownAt = System.currentTimeMillis(),
+        )
+        metric("inline.shown", "count" to current.candidates.size)
+    }
+
+    private fun clearInlineState(editor: Editor) {
+        inlineStates.remove(editor)
+    }
+
+    private fun launchNextEditFetch(
+        editor: Editor,
+        autocompleteRequest: AutocompleteRequest,
+        snapshot: CompletionContextSnapshot,
+        requestId: Long,
+    ) {
+        val settings = PluginSettings.getInstance().state
+        if (!settings.nextEditEnabled) {
+            clearNextEdit(editor)
+            return
+        }
+
+        val provider = nextEditProvider?.takeIf { AutocompleteCapability.NEXT_EDIT in it.capabilities } ?: return
+        scope.launch {
+            val response = try {
+                provider.complete(autocompleteRequest)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Next edit request failed", e)
+                null
+            } ?: return@launch
+
+            val candidate = response.nextEditCandidates
+                .firstNotNullOfOrNull { nextEditCandidateOrNull(it, snapshot) }
+
+            withContext(Dispatchers.Main) {
+                if (editor.isDisposed) return@withContext
+                if (inlineStates[editor]?.requestId?.let { it > requestId } == true) return@withContext
+
+                if (candidate == null) {
+                    clearNextEdit(editor)
+                    return@withContext
+                }
+
+                nextEditStates[editor] = NextEditState(
+                    requestId = requestId,
+                    candidate = candidate,
+                )
+                metric("next_edit.ready", "start" to candidate.startOffset, "end" to candidate.endOffset)
+            }
+        }
+    }
+
+    private fun nextEditCandidateOrNull(
+        candidate: NextEditCompletionCandidate,
+        snapshot: CompletionContextSnapshot,
+    ): NextEditCompletionCandidate? = NextEditCandidatePolicy.previewCandidateOrNull(
+        candidate = candidate,
+        snapshot = snapshot,
+        maxPreviewLines = PluginSettings.getInstance().state.nextEditPreviewMaxLines,
+        maxPreviewChars = MAX_NEXT_EDIT_CHARS,
+    )
+
+    private fun clearNextEdit(editor: Editor): Boolean {
+        val removed = nextEditStates.remove(editor) ?: return false
+        removed.preview?.dispose()
+        return true
+    }
+
+    private fun suggestionKey(
+        documentHash: Int,
+        insertionOffset: Int,
+        text: String,
+    ): RejectionCache.SuggestionKey = RejectionCache.SuggestionKey(
+        documentHash = documentHash,
+        offset = insertionOffset,
+        suggestionHash = text.hashCode(),
+    )
+
+    private suspend fun delayForDwell(requestStartedAt: Long) {
+        val remaining = PluginSettings.getInstance().state.tabAcceptMinDwellMs -
+            (System.currentTimeMillis() - requestStartedAt)
+        if (remaining > 0) {
+            delay(remaining)
+        }
+    }
+
+    private fun metric(name: String, vararg pairs: Pair<String, Any?>) {
+        if (!PluginSettings.getInstance().state.debugMetricsLogging) return
+        val body = pairs.joinToString(", ") { (key, value) -> "$key=$value" }
+        if (body.isBlank()) {
+            log.info("[ood-metrics] $name")
+        } else {
+            log.info("[ood-metrics] $name $body")
+        }
+    }
+
+    private fun createInlineCache(): InlineSuggestionCache {
+        val settings = PluginSettings.getInstance().state
+        return InlineSuggestionCache(
+            maxEntries = settings.suggestionCacheMaxEntries,
+            ttlMs = settings.suggestionCacheTtlMs,
+        )
+    }
+
+    private fun suppressCaretHandling(editor: Editor, block: () -> Unit) {
+        synchronized(caretSuppression) {
+            caretSuppression.add(editor)
+        }
+        try {
+            block()
+        } finally {
+            synchronized(caretSuppression) {
+                caretSuppression.remove(editor)
+            }
+        }
+    }
+
+    private data class InlineState(
+        val requestId: Long,
+        val candidates: List<InlineCompletionCandidate>,
+        val rejectionKey: RejectionCache.SuggestionKey?,
+        val visible: Boolean = false,
+        val shownAt: Long = 0L,
+    )
+
+    private data class NextEditState(
+        val requestId: Long,
+        val candidate: NextEditCompletionCandidate,
+        val preview: NextEditPreview? = null,
+    )
+
     companion object {
+        private const val CONTEXT_WINDOW_CHARS = 1_500
         private const val MAX_DOCUMENT_CHARS = 250_000
         private const val MAX_SUGGESTION_CHARS = 400
         private const val LOOKBACK_FOR_NON_WHITESPACE = 80
+        private const val MAX_NEXT_EDIT_SNIPPETS = 5
+        private const val MAX_NEXT_EDIT_DIFFS = 5
+        private const val MAX_NEXT_EDIT_CHARS = 800
     }
 }

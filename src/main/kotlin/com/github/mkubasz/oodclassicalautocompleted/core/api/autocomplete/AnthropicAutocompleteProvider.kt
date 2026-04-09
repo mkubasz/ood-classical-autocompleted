@@ -16,6 +16,8 @@ class AnthropicAutocompleteProvider(
     private val model: String,
 ) : AutocompleteProvider {
 
+    override val capabilities: Set<AutocompleteCapability> = setOf(AutocompleteCapability.INLINE)
+
     private val httpClient = HttpClient(CIO) {
         engine {
             requestTimeout = 30_000
@@ -29,7 +31,7 @@ class AnthropicAutocompleteProvider(
 
     private val cancelled = AtomicBoolean(false)
 
-    override suspend fun complete(request: AutocompleteRequest): AutocompleteResult? {
+    override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
         cancelled.set(false)
 
@@ -67,7 +69,14 @@ class AnthropicAutocompleteProvider(
                 ?.takeIf { it.isNotBlank() }
                 ?: return null
 
-            AutocompleteResult(text)
+            CompletionResponse(
+                inlineCandidates = listOf(
+                    InlineCompletionCandidate(
+                        text = text,
+                        insertionOffset = request.cursorOffset ?: request.prefix.length,
+                    )
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -89,6 +98,14 @@ class AnthropicAutocompleteProvider(
         appendLine("Complete the code at the cursor.")
         appendLine("Return only the text to insert, with no markdown, explanations, or code fences.")
         appendLine("Prefer a short continuation that fits naturally before the provided suffix.")
+        request.inlineContext?.let { context ->
+            val formatted = InlineModelContextFormatter.formatForInstructionPrompt(context)
+            if (formatted.isNotBlank()) {
+                appendLine("<ide_context>")
+                append(formatted)
+                appendLine("</ide_context>")
+            }
+        }
         if (!request.filePath.isNullOrBlank()) {
             appendLine("File: ${request.filePath}")
         }

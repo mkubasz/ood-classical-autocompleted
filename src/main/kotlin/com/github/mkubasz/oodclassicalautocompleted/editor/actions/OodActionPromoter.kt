@@ -9,7 +9,11 @@ class OodActionPromoter : ActionPromoter {
         // Promote autocomplete accept/reject above IDE defaults
         // so Tab/Escape are intercepted when autocomplete is active
         val oodActions = actions.filter {
-            it is AcceptCompletionAction || it is RejectCompletionAction
+            it is AcceptCompletionAction ||
+                it is AcceptInlineSuggestionAction ||
+                it is RejectCompletionAction ||
+                it is CycleNextSuggestionAction ||
+                it is CyclePreviousSuggestionAction
         }
         if (oodActions.isEmpty()) return emptyList()
         return oodActions + actions.filter { it !in oodActions }

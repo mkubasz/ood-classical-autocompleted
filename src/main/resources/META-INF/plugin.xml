@@ -4,6 +4,7 @@
     <vendor url="https://github.com/mkubasz">mkubasz</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Settings -->
@@ -29,6 +30,10 @@
         <actionPromoter
             implementation="com.github.mkubasz.oodclassicalautocompleted.editor.actions.OodActionPromoter"/>
 
+        <inline.completion.provider
+            id="oodAutocompleteInline"
+            implementation="com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.OodInlineCompletionProvider"/>
+
         <!-- Project Services -->
         <projectService
             serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.AutocompleteService"/>
@@ -40,14 +45,22 @@
         <!-- Autocomplete Actions -->
         <action id="OodAutocomplete.AcceptCompletion"
                 class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.AcceptCompletionAction"
-                text="Accept Completion">
-            <keyboard-shortcut keymap="$default" first-keystroke="TAB"/>
-        </action>
+                text="Accept Completion"/>
+
+        <action id="OodAutocomplete.AcceptInlineSuggestion"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.AcceptInlineSuggestionAction"
+                text="Accept Inline Suggestion"/>
 
         <action id="OodAutocomplete.RejectCompletion"
                 class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.RejectCompletionAction"
-                text="Dismiss Completion">
-            <keyboard-shortcut keymap="$default" first-keystroke="ESCAPE"/>
-        </action>
+                text="Dismiss Completion"/>
+
+        <action id="OodAutocomplete.CycleNextSuggestion"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.CycleNextSuggestionAction"
+                text="Next Completion Alternative"/>
+
+        <action id="OodAutocomplete.CyclePreviousSuggestion"
+                class="com.github.mkubasz.oodclassicalautocompleted.editor.actions.CyclePreviousSuggestionAction"
+                text="Previous Completion Alternative"/>
     </actions>
 </idea-plugin>

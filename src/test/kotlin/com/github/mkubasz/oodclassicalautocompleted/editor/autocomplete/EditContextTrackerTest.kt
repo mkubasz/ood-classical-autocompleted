@@ -34,6 +34,21 @@ class EditContextTrackerTest : BasePlatformTestCase() {
         assertEquals("limit_10.kt", tracker.recentSnippets.last().filePath)
     }
 
+    fun testCentersSnippetAroundCaretLine() {
+        val tracker = project.service<EditContextTracker>()
+        val content = (1..40).joinToString("\n") { "line$it" }
+        val caretOffset = content.indexOf("line25") + "line25".length
+
+        tracker.onFileViewed("focus.kt", content, caretOffset)
+
+        val snippetLines = tracker.recentSnippets.single { it.filePath == "focus.kt" }.content.lines()
+        assertTrue("line25" in snippetLines)
+        assertTrue("line15" in snippetLines)
+        assertTrue("line34" in snippetLines)
+        assertFalse("line14" in snippetLines)
+        assertFalse("line35" in snippetLines)
+    }
+
     fun testTracksDocumentChanges() {
         val tracker = project.service<EditContextTracker>()
         val countBefore = tracker.recentDiffs.size
@@ -89,5 +104,15 @@ class EditContextTrackerTest : BasePlatformTestCase() {
     fun testComputeSimpleDiffNoDifference() {
         val diff = EditContextTracker.computeSimpleDiff("f.kt", "same\ncontent", "same\ncontent")
         assertEquals("", diff)
+    }
+
+    fun testExtractSnippetAroundCaretFallsBackToMiddleWhenCaretMissing() {
+        val content = (1..30).joinToString("\n") { "line$it" }
+
+        val snippetLines = EditContextTracker.extractSnippetAroundCaret(content, null).lines()
+
+        assertTrue("line16" in snippetLines)
+        assertTrue("line25" in snippetLines)
+        assertFalse("line1" in snippetLines)
     }
 }

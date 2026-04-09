@@ -1,9 +1,13 @@
 package com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete
 
 import com.github.mkubasz.oodclassicalautocompleted.settings.AutocompleteProviderType
+import com.github.mkubasz.oodclassicalautocompleted.settings.InceptionLabsAdvancedSettings
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
+import com.intellij.openapi.diagnostic.logger
 
 object AutocompleteProviderFactory {
+
+    private val log = logger<AutocompleteProviderFactory>()
 
     fun createFimProvider(state: PluginSettings.State): AutocompleteProvider? = when (state.autocompleteProvider) {
         AutocompleteProviderType.ANTHROPIC -> {
@@ -21,6 +25,7 @@ object AutocompleteProviderFactory {
                 apiKey = state.inceptionLabsApiKey,
                 baseUrl = state.inceptionLabsBaseUrl.ifBlank { InceptionLabsFimProvider.DEFAULT_BASE_URL },
                 model = state.inceptionLabsModel.ifBlank { InceptionLabsFimProvider.DEFAULT_MODEL },
+                generationOptions = safeFimOptions(state),
             )
         }
     }
@@ -32,6 +37,29 @@ object AutocompleteProviderFactory {
             apiKey = state.inceptionLabsApiKey,
             baseUrl = state.inceptionLabsBaseUrl.ifBlank { InceptionLabsNextEditProvider.DEFAULT_BASE_URL },
             model = state.inceptionLabsModel.ifBlank { InceptionLabsNextEditProvider.DEFAULT_MODEL },
+            generationOptions = safeNextEditOptions(state),
+            contextOptions = safeNextEditContextOptions(state),
         )
     }
+
+    private fun safeFimOptions(state: PluginSettings.State): InceptionLabsGenerationOptions =
+        runCatching { InceptionLabsAdvancedSettings.fimOptionsFromState(state) }
+            .getOrElse { error ->
+                log.warn("Invalid Inception FIM settings. Falling back to defaults.", error)
+                InceptionLabsGenerationOptions()
+            }
+
+    private fun safeNextEditOptions(state: PluginSettings.State): InceptionLabsGenerationOptions =
+        runCatching { InceptionLabsAdvancedSettings.nextEditOptionsFromState(state) }
+            .getOrElse { error ->
+                log.warn("Invalid Inception Next Edit generation settings. Falling back to defaults.", error)
+                InceptionLabsGenerationOptions()
+            }
+
+    private fun safeNextEditContextOptions(state: PluginSettings.State): InceptionLabsNextEditContextOptions =
+        runCatching { InceptionLabsAdvancedSettings.nextEditContextOptionsFromState(state) }
+            .getOrElse { error ->
+                log.warn("Invalid Inception Next Edit context settings. Falling back to defaults.", error)
+                InceptionLabsNextEditContextOptions()
+            }
 }

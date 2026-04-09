@@ -14,15 +14,17 @@ class InceptionLabsNextEditProvider(
     private val apiKey: String,
     baseUrl: String = DEFAULT_BASE_URL,
     private val model: String = DEFAULT_MODEL,
+    private val generationOptions: InceptionLabsGenerationOptions = InceptionLabsGenerationOptions(),
+    private val contextOptions: InceptionLabsNextEditContextOptions = InceptionLabsNextEditContextOptions(),
+    private val httpClient: HttpClient = defaultHttpClient(),
 ) : AutocompleteProvider {
 
-    private val endpoint = "${baseUrl.trimEnd('/')}/edit/completions"
+    override val capabilities: Set<AutocompleteCapability> = setOf(
+        AutocompleteCapability.NEXT_EDIT,
+        AutocompleteCapability.INLINE,
+    )
 
-    private val httpClient = HttpClient(CIO) {
-        engine {
-            requestTimeout = 30_000
-        }
-    }
+    private val endpoint = "${baseUrl.trimEnd('/')}/edit/completions"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -32,22 +34,21 @@ class InceptionLabsNextEditProvider(
     private val log = logger<InceptionLabsNextEditProvider>()
     private val cancelled = AtomicBoolean(false)
 
-    override suspend fun complete(request: AutocompleteRequest): AutocompleteResult? {
+    override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
         cancelled.set(false)
 
-        val editableRegion = NextEditInlineAdapter.extractRegion(request, EDIT_REGION_RADIUS)
+        val editableRegion = NextEditInlineAdapter.extractRegion(
+            request = request,
+            linesAboveCursor = contextOptions.linesAboveCursor,
+            linesBelowCursor = contextOptions.linesBelowCursor,
+        )
         val prompt = buildNextEditPrompt(request, editableRegion)
-
-        val body = buildJsonObject {
-            put("model", model)
-            putJsonArray("messages") {
-                addJsonObject {
-                    put("role", "user")
-                    put("content", prompt)
-                }
-            }
-        }
+        val body = InceptionLabsRequestBodyBuilder.buildNextEditBody(
+            model = model,
+            prompt = prompt,
+            options = generationOptions,
+        )
 
         return try {
             log.info("NextEdit request to $endpoint")
@@ -62,7 +63,7 @@ class InceptionLabsNextEditProvider(
             }
 
             val payload = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            val insertion = payload["choices"]
+            val updatedRegionText = payload["choices"]
                 ?.jsonArray
                 ?.firstOrNull()
                 ?.jsonObject
@@ -73,14 +74,29 @@ class InceptionLabsNextEditProvider(
                 ?.content
                 ?.trim()
                 ?.let(::extractCodeFromResponse)
-                ?.let { NextEditInlineAdapter.deriveInsertion(editableRegion, it) }
-                ?.takeIf { it.text.isNotBlank() }
                 ?: return null
 
-            AutocompleteResult(
-                text = insertion.text,
-                insertionOffset = insertion.offset,
-                isExactInsertion = true,
+            val edit = NextEditInlineAdapter.deriveEdit(editableRegion, updatedRegionText)
+                ?.takeIf { it.startOffset <= it.endOffset }
+            val inlineCandidates = inlineCandidatesFor(
+                editableRegion = editableRegion,
+                updatedRegionText = updatedRegionText,
+                cursorOffset = request.cursorOffset,
+            )
+
+            if (edit == null && inlineCandidates.isEmpty()) return null
+
+            CompletionResponse(
+                inlineCandidates = inlineCandidates,
+                nextEditCandidates = edit?.let {
+                    listOf(
+                        NextEditCompletionCandidate(
+                            startOffset = it.startOffset,
+                            endOffset = it.endOffset,
+                            replacementText = it.replacementText,
+                        )
+                    )
+                }.orEmpty()
             )
         } catch (e: CancellationException) {
             throw e
@@ -165,9 +181,34 @@ class InceptionLabsNextEditProvider(
         return trimmed
     }
 
+    private fun inlineCandidatesFor(
+        editableRegion: NextEditInlineAdapter.EditableRegion,
+        updatedRegionText: String,
+        cursorOffset: Int?,
+    ): List<InlineCompletionCandidate> {
+        val absoluteCursorOffset = cursorOffset ?: return emptyList()
+        val insertion = NextEditInlineAdapter.deriveInlineInsertion(editableRegion, updatedRegionText)
+            ?: return emptyList()
+        if (insertion.offset != absoluteCursorOffset) return emptyList()
+        if (insertion.text.isBlank()) return emptyList()
+
+        return listOf(
+            InlineCompletionCandidate(
+                text = insertion.text,
+                insertionOffset = absoluteCursorOffset,
+                isExactInsertion = true,
+            )
+        )
+    }
+
     companion object {
         const val DEFAULT_BASE_URL = "https://api.inceptionlabs.ai/v1"
         const val DEFAULT_MODEL = "mercury-edit-2"
-        private const val EDIT_REGION_RADIUS = 7
+
+        private fun defaultHttpClient(): HttpClient = HttpClient(CIO) {
+            engine {
+                requestTimeout = 30_000
+            }
+        }
     }
 }

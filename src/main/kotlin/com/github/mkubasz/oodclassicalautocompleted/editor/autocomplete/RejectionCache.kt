@@ -27,6 +27,7 @@ class RejectionCache(
             AutocompleteService.DismissReason.ESCAPE -> 1500L
             AutocompleteService.DismissReason.TYPING -> 500L
             AutocompleteService.DismissReason.SELECTION_CHANGED -> 500L
+            AutocompleteService.DismissReason.ALTERNATIVE_REQUESTED -> 0L
         }
 
         // Only cache if the suggestion was shown long enough
@@ -42,6 +43,9 @@ class RejectionCache(
         val now = System.currentTimeMillis()
         val recentRejections = rejections.filter {
             it.key == key && (now - it.timestamp) < rejectionWindowMs
+        }
+        if (recentRejections.any { it.reason == AutocompleteService.DismissReason.ALTERNATIVE_REQUESTED }) {
+            return false
         }
         return recentRejections.size < 2
     }

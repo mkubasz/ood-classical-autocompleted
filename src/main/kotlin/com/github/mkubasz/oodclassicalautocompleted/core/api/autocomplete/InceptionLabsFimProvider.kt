@@ -14,7 +14,10 @@ class InceptionLabsFimProvider(
     private val apiKey: String,
     baseUrl: String = DEFAULT_BASE_URL,
     private val model: String = DEFAULT_MODEL,
+    private val generationOptions: InceptionLabsGenerationOptions = InceptionLabsGenerationOptions(),
 ) : AutocompleteProvider {
+
+    override val capabilities: Set<AutocompleteCapability> = setOf(AutocompleteCapability.INLINE)
 
     private val endpoint = "${baseUrl.trimEnd('/')}/fim/completions"
 
@@ -32,15 +35,15 @@ class InceptionLabsFimProvider(
     private val log = logger<InceptionLabsFimProvider>()
     private val cancelled = AtomicBoolean(false)
 
-    override suspend fun complete(request: AutocompleteRequest): AutocompleteResult? {
+    override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
         cancelled.set(false)
 
-        val body = buildJsonObject {
-            put("model", model)
-            put("prompt", request.prefix)
-            put("suffix", request.suffix)
-        }
+        val body = InceptionLabsRequestBodyBuilder.buildFimBody(
+            model = model,
+            request = request,
+            options = generationOptions,
+        )
 
         return try {
             log.info("FIM request to $endpoint")
@@ -66,7 +69,14 @@ class InceptionLabsFimProvider(
                 ?.takeIf { it.isNotBlank() }
                 ?: return null
 
-            AutocompleteResult(text)
+            CompletionResponse(
+                inlineCandidates = listOf(
+                    InlineCompletionCandidate(
+                        text = text,
+                        insertionOffset = request.cursorOffset ?: request.prefix.length,
+                    )
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

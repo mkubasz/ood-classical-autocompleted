@@ -10,12 +10,14 @@ class AcceptCompletionAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
-        project.service<AutocompleteService>().acceptSuggestion(editor)
+        project.service<AutocompleteService>().acceptOnTab(editor)
     }
 
     override fun update(e: AnActionEvent) {
         val project = e.project
+        val editor = e.getData(CommonDataKeys.EDITOR)
         e.presentation.isEnabled = project != null &&
-            project.service<AutocompleteService>().hasActiveSuggestion
+            editor != null &&
+            project.service<AutocompleteService>().canAcceptOnTab(editor)
     }
 }

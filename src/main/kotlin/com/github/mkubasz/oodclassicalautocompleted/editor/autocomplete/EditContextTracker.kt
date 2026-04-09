@@ -18,19 +18,11 @@ class EditContextTracker(@Suppress("unused") private val project: Project) : Dis
     val recentDiffs: List<String>
         get() = _recentDiffs.toList().takeLast(MAX_DIFFS)
 
-    fun onFileViewed(filePath: String, content: String) {
+    fun onFileViewed(filePath: String, content: String, caretOffset: Int? = null) {
         // Remove existing snippet for same file to avoid duplicates
         _recentSnippets.removeIf { it.filePath == filePath }
 
-        // Store a trimmed snapshot centered roughly in the middle
-        val lines = content.lines()
-        val snippet = if (lines.size > SNIPPET_LINES) {
-            val start = maxOf(0, (lines.size / 2) - (SNIPPET_LINES / 2))
-            lines.subList(start, minOf(lines.size, start + SNIPPET_LINES)).joinToString("\n")
-        } else {
-            content
-        }
-
+        val snippet = extractSnippetAroundCaret(content, caretOffset)
         _recentSnippets.addLast(CodeSnippet(filePath, snippet.take(MAX_SNIPPET_CHARS)))
 
         // Evict oldest if over capacity
@@ -62,6 +54,22 @@ class EditContextTracker(@Suppress("unused") private val project: Project) : Dis
         private const val SNIPPET_LINES = 20
         private const val MAX_SNIPPET_CHARS = 2000
         private const val MAX_DIFF_CONTEXT = 3
+
+        internal fun extractSnippetAroundCaret(content: String, caretOffset: Int?): String {
+            val lines = content.lines()
+            if (lines.size <= SNIPPET_LINES) return content
+
+            val boundedOffset = (caretOffset ?: (content.length / 2)).coerceIn(0, content.length)
+            val caretLine = content
+                .take(boundedOffset)
+                .count { it == '\n' }
+                .coerceAtMost(lines.lastIndex)
+
+            val preferredStart = maxOf(0, caretLine - (SNIPPET_LINES / 2))
+            val start = minOf(preferredStart, maxOf(0, lines.size - SNIPPET_LINES))
+            val end = minOf(lines.size, start + SNIPPET_LINES)
+            return lines.subList(start, end).joinToString("\n")
+        }
 
         internal fun computeSimpleDiff(filePath: String, oldText: String, newText: String): String {
             val oldLines = oldText.lines()

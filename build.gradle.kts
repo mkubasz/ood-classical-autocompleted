@@ -2,6 +2,7 @@ import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.gradle.api.provider.Provider
+import java.io.File
 
 plugins {
     id("java") // Java support
@@ -20,8 +21,28 @@ private fun Provider<String>.splitCsv(): Provider<List<String>> = map { rawValue
         .filter(String::isNotEmpty)
 }
 
+private fun firstExistingPath(vararg candidates: String?): String? = candidates
+    .filterNotNull()
+    .map(::File)
+    .firstOrNull(File::exists)
+    ?.absolutePath
+
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
+
+val localPythonTestPluginPath = firstExistingPath(
+    System.getenv("PYCHARM_PYTHON_PLUGIN_PATH"),
+    "${System.getProperty("user.home")}/Applications/PyCharm.app/Contents/plugins/python-ce",
+    "/Applications/PyCharm.app/Contents/plugins/python-ce",
+    "${System.getProperty("user.home")}/Applications/DataSpell.app/Contents/plugins/python-ce",
+    "/Applications/DataSpell.app/Contents/plugins/python-ce",
+)
+
+val localGoTestPluginPath = firstExistingPath(
+    System.getenv("GOLAND_GO_PLUGIN_PATH"),
+    "${System.getProperty("user.home")}/Applications/GoLand.app/Contents/plugins/go-ide",
+    "/Applications/GoLand.app/Contents/plugins/go-ide",
+)
 
 // Set the JVM language level used to build the project.
 kotlin {
@@ -73,6 +94,9 @@ dependencies {
 
         // Module Dependencies. Uses `platformBundledModules` property from the gradle.properties file for bundled IntelliJ Platform modules.
         bundledModules(providers.gradleProperty("platformBundledModules").splitCsv())
+
+        localPythonTestPluginPath?.let(::testLocalPlugin)
+        localGoTestPluginPath?.let(::testLocalPlugin)
 
         testFramework(TestFrameworkType.Platform)
     }
@@ -155,6 +179,14 @@ kover {
 }
 
 tasks {
+    withType<Test> {
+        listOf("INCEPTION_API_KEY", "INCEPTION_BASE_URL", "INCEPTION_MODEL").forEach { variable ->
+            System.getenv(variable)?.let { value ->
+                environment(variable, value)
+            }
+        }
+    }
+
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
