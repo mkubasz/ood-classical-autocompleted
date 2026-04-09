@@ -1,10 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
 
 internal object AutocompleteSuggestionNormalizer {
 
-    fun normalize(rawText: String, request: AutocompleteRequest, maxChars: Int): String {
+    fun normalize(rawText: String, request: ProviderRequest, maxChars: Int): String {
         val normalizedLineEndings = rawText.replace("\r", "")
         if (normalizedLineEndings.trim() == "(no output)") return ""
 

@@ -1,12 +1,12 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
 
     fun testStripsPrefixEchoFromSuggestion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "console.lo",
             suffix = "",
             filePath = "demo.js",
@@ -23,7 +23,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testTrimsOverlapWithExistingSuffix() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "return ",
             suffix = ")",
             filePath = "demo.kt",
@@ -40,7 +40,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testExtractsCodeFromMarkdownFence() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "",
             suffix = "",
             filePath = "demo.py",
@@ -57,7 +57,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testDropsNoOutputSentinel() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "",
             suffix = "",
             filePath = null,
@@ -74,7 +74,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testStripsLeadingParenDuplicationWithSuffix() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "class Ania(Czl",
             suffix = "):\n    pass",
             filePath = "demo.py",
@@ -91,7 +91,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testFiltersVeryShortSuggestions() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "b = ",
             suffix = "",
             filePath = "demo.py",
@@ -108,7 +108,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testStripsDuplicateClosingParenForGoMethodReceiver() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "func (",
             suffix = ") Count() int {\n",
             filePath = "counter.go",
@@ -125,7 +125,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testStripsFormattingDifferentSuffixOverlap() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "class Foo:\n    def process(",
             suffix = "self, data):\n        pass",
             filePath = "demo.py",
@@ -142,7 +142,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testStripsPrefixEchoWithDifferentFormatting() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "func process( ctx context.Context,",
             suffix = "",
             filePath = "main.go",
@@ -162,7 +162,7 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
     }
 
     fun testStripsDuplicateClosingBracketForArray() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "items = [",
             suffix = "]\n",
             filePath = "demo.py",

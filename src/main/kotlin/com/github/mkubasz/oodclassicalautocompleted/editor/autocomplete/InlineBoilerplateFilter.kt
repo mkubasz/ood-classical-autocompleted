@@ -1,11 +1,11 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 
 internal object InlineBoilerplateFilter {
 
-    fun isAllowed(candidate: InlineCompletionCandidate, request: AutocompleteRequest): Boolean {
+    fun isAllowed(candidate: InlineCompletionCandidate, request: ProviderRequest): Boolean {
         val context = request.inlineContext ?: return true
         if (!isPython(request.language) || !context.isFreshBlockBodyContext) return true
 

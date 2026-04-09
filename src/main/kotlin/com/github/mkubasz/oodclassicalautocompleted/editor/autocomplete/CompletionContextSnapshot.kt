@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 import com.intellij.openapi.project.Project
 
 internal data class CompletionContextSnapshot(

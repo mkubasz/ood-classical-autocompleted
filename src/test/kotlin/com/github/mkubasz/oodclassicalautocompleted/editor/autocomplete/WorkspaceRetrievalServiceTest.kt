@@ -1,8 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunkKind
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunkKind
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.go.GoLanguageSupport
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.java.JavaLanguageSupport
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class WorkspaceRetrievalServiceTest : BasePlatformTestCase() {
@@ -282,5 +284,114 @@ class WorkspaceRetrievalServiceTest : BasePlatformTestCase() {
 
         assertEquals(RetrievedContextChunkKind.SYMBOL, bestChunk.chunkKind)
         assertTrue(bestChunk.content.startsWith("class DatabaseClient:"))
+    }
+
+    fun testJavaRetrievalUsesJavaSpecificStructuralChunking() {
+        myFixture.configureByText(
+            "Runner.java",
+            """
+            class Runner {
+                void run(AccountService service) {
+                    service.loadUsers();
+                }
+            }
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject(
+            "services/AccountService.java",
+            """
+            package services;
+
+            public class AccountService {
+                public void loadUsers() {
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val snapshot = CompletionContextSnapshot(
+            filePath = myFixture.file.virtualFile.path,
+            language = "java",
+            documentText = myFixture.editor.document.text,
+            documentStamp = myFixture.editor.document.modificationStamp,
+            caretOffset = myFixture.editor.document.textLength,
+            prefix = myFixture.editor.document.text,
+            suffix = "",
+            prefixWindow = myFixture.editor.document.text,
+            suffixWindow = "",
+            inlineContext = InlineModelContext(
+                lexicalContext = InlineLexicalContext.CODE,
+                resolvedReferenceName = "AccountService",
+                currentDefinitionName = "run",
+            ),
+            project = project,
+        )
+
+        val chunk = project.getService(WorkspaceRetrievalService::class.java)
+            .retrieve(
+                snapshot,
+                maxChunks = 1,
+                retrievalProfile = JavaLanguageSupport.retrievalProfile(),
+            )
+            .chunks
+            .single()
+
+        assertEquals(RetrievedContextChunkKind.SYMBOL, chunk.chunkKind)
+        assertTrue("chunk=$chunk", chunk.content.contains("class AccountService"))
+    }
+
+    fun testGoRetrievalUsesGoSpecificStructuralChunking() {
+        myFixture.configureByText(
+            "main.go",
+            """
+            package main
+
+            func run(client *Client) {
+                client.QueryUsers()
+            }
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject(
+            "services/client.go",
+            """
+            package services
+
+            type Client struct{}
+
+            func (c *Client) QueryUsers() error {
+                return nil
+            }
+            """.trimIndent(),
+        )
+
+        val snapshot = CompletionContextSnapshot(
+            filePath = myFixture.file.virtualFile.path,
+            language = "go",
+            documentText = myFixture.editor.document.text,
+            documentStamp = myFixture.editor.document.modificationStamp,
+            caretOffset = myFixture.editor.document.textLength,
+            prefix = myFixture.editor.document.text,
+            suffix = "",
+            prefixWindow = myFixture.editor.document.text,
+            suffixWindow = "",
+            inlineContext = InlineModelContext(
+                lexicalContext = InlineLexicalContext.CODE,
+                receiverExpression = "client",
+                resolvedReferenceName = "Client",
+                currentDefinitionName = "run",
+            ),
+            project = project,
+        )
+
+        val chunks = project.getService(WorkspaceRetrievalService::class.java)
+            .retrieve(
+                snapshot,
+                maxChunks = 2,
+                retrievalProfile = GoLanguageSupport.retrievalProfile(),
+            )
+            .chunks
+
+        assertTrue("chunks=$chunks", chunks.any { it.chunkKind == RetrievedContextChunkKind.SYMBOL })
+        assertTrue("chunks=$chunks", chunks.any { it.content.contains("QueryUsers") })
     }
 }

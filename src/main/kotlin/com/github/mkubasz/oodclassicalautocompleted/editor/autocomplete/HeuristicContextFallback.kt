@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.ResolvedDefinition
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ResolvedDefinition
 
 /**
  * Lightweight regex-based context extraction for languages where PSI resolution yields nothing.

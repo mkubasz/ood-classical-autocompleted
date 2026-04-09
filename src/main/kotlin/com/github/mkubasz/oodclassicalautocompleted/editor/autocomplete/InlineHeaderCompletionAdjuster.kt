@@ -1,10 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
 
 internal object InlineHeaderCompletionAdjuster {
 
-    fun adjust(text: String, request: AutocompleteRequest): String {
+    fun adjust(text: String, request: ProviderRequest): String {
         if (text.isBlank()) return text
         if (!isPythonHeaderContext(request)) return text
 
@@ -15,7 +15,7 @@ internal object InlineHeaderCompletionAdjuster {
         )
     }
 
-    private fun isPythonHeaderContext(request: AutocompleteRequest): Boolean {
+    private fun isPythonHeaderContext(request: ProviderRequest): Boolean {
         val language = request.language.orEmpty().lowercase()
         val context = request.inlineContext
 

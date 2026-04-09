@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,7 +10,7 @@ class InlineSuggestionSafetyTest {
 
     @Test
     fun rejectsMultilineSuggestionInsidePartialPythonSignature() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "class Agent:\n    def clear_history(self(",
             suffix = "",
             filePath = "agent.py",
@@ -28,7 +28,7 @@ class InlineSuggestionSafetyTest {
 
     @Test
     fun rejectsMultilineSuggestionWhenCurrentLineHasTrailingCode() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "result = ",
             suffix = "value",
             filePath = "agent.py",
@@ -46,7 +46,7 @@ class InlineSuggestionSafetyTest {
 
     @Test
     fun allowsMultilineSuggestionAtBlockBoundary() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "if ready:",
             suffix = "",
             filePath = "agent.py",
@@ -64,7 +64,7 @@ class InlineSuggestionSafetyTest {
 
     @Test
     fun allowsBoundaryAdjustedAssignmentOnNextLine() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "logger.setLevel(logging.DEBUG)",
             suffix = "",
             filePath = "logger.py",
@@ -82,7 +82,7 @@ class InlineSuggestionSafetyTest {
 
     @Test
     fun allowsBoundaryAdjustedFunctionDefinitionOnNextLine() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "logger.addHandler(handler)",
             suffix = "",
             filePath = "logger.py",

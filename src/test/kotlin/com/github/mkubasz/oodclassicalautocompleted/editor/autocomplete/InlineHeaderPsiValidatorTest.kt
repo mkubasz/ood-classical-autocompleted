@@ -1,9 +1,9 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InlineHeaderPsiValidatorTest : BasePlatformTestCase() {
@@ -20,7 +20,7 @@ class InlineHeaderPsiValidatorTest : BasePlatformTestCase() {
         if (!isPythonPsiAvailable()) return
 
         val documentText = myFixture.editor.document.text
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = documentText,
             suffix = "",
             filePath = "logger.py",
@@ -59,7 +59,7 @@ class InlineHeaderPsiValidatorTest : BasePlatformTestCase() {
         if (!isPythonPsiAvailable()) return
 
         val documentText = myFixture.editor.document.text
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = documentText,
             suffix = "",
             filePath = "agent.py",
@@ -87,7 +87,7 @@ class InlineHeaderPsiValidatorTest : BasePlatformTestCase() {
     }
 
     private fun snapshotFor(
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         documentText: String,
     ): CompletionContextSnapshot = CompletionContextSnapshot(
         filePath = request.filePath,

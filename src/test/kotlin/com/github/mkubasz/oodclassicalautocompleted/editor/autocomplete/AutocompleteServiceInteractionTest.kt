@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.NextEditCompletionCandidate
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 

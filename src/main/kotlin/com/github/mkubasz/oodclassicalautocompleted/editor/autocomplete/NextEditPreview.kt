@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.NextEditCompletionCandidate
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor

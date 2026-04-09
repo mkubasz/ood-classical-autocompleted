@@ -1,8 +1,8 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.NextEditCompletionCandidate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

@@ -1,11 +1,11 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 
 internal object InlineSuggestionBoundaryAdjuster {
 
-    fun adjust(candidate: InlineCompletionCandidate, request: AutocompleteRequest): InlineCompletionCandidate {
+    fun adjust(candidate: InlineCompletionCandidate, request: ProviderRequest): InlineCompletionCandidate {
         val adjustedText = if (
             needsLeadingNewline(
                 text = candidate.text,
@@ -22,7 +22,7 @@ internal object InlineSuggestionBoundaryAdjuster {
 
     internal fun needsLeadingNewline(
         text: String,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         insertionOffset: Int,
     ): Boolean {
         if (text.isBlank() || text.startsWith('\n') || text.startsWith('\r')) return false

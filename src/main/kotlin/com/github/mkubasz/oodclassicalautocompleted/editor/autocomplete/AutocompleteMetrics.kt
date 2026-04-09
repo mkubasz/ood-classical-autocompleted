@@ -19,6 +19,7 @@ internal enum class AutocompleteMetricType(val eventName: String) {
     INLINE_REJECTED("inline.rejected"),
     INLINE_CORRECTNESS("inline.correctness"),
     INLINE_LATENCY("inline.latency"),
+    PIPELINE_STAGE("pipeline.stage"),
     NEXT_EDIT_READY("next_edit.ready"),
     NEXT_EDIT_PREVIEWED("next_edit.previewed"),
     NEXT_EDIT_ACCEPTED("next_edit.accepted"),

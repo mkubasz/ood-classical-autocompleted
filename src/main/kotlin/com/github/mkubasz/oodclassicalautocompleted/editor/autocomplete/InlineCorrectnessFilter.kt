@@ -1,7 +1,11 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.CorrectnessParameterStyle
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.CorrectnessValidationContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.LanguageCorrectnessProfile
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.LanguageSupportRegistry
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiErrorElement
@@ -74,11 +78,15 @@ internal object InlineCorrectnessFilter {
 
     fun check(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot?,
         timeLimitMs: Long = DEFAULT_TIME_LIMIT_MS,
     ): Result {
-        val family = LanguageFamily.from(request.language, snapshot?.filePath ?: request.filePath)
+        val filePath = snapshot?.filePath ?: request.filePath
+        val languageId = snapshot?.language ?: request.language
+        val languageSupport = LanguageSupportRegistry.default().forLanguage(languageId, filePath)
+        val profile = languageSupport.correctnessProfile(languageId, filePath)
+        val family = profile.family
         val project = snapshot?.project ?: return Result.Pass(family)
         if (project.isDisposed) return Result.Pass(family)
 
@@ -86,13 +94,15 @@ internal object InlineCorrectnessFilter {
         val documentText = snapshot.documentText
         if (insertionOffset !in 0..documentText.length) return Result.Pass(family)
 
-        val profile = profileFor(family)
         val structuralFailure = structuralFailure(profile, snapshot, candidate)
         if (structuralFailure != null) {
             return Result.Reject(
                 family = family,
                 reason = FailureReason.STRUCTURE,
             )
+        }
+        if (shouldBypassPsiValidation(profile, request, snapshot, candidate)) {
+            return Result.Pass(family)
         }
 
         val modifiedText = documentText.substring(0, insertionOffset) +
@@ -171,7 +181,7 @@ internal object InlineCorrectnessFilter {
     }
 
     private fun structuralFailure(
-        profile: CorrectnessProfile,
+        profile: LanguageCorrectnessProfile,
         snapshot: CompletionContextSnapshot,
         candidate: InlineCompletionCandidate,
     ): String? {
@@ -185,11 +195,29 @@ internal object InlineCorrectnessFilter {
         if (hasDanglingQuote(text, snapshot.suffix)) {
             return "dangling_quote"
         }
-        if (profile.family == LanguageFamily.PYTHON && hasPythonIndentationIssue(snapshot, text)) {
-            return "indentation"
-        }
+        return profile.structuralValidator?.invoke(
+            CorrectnessValidationContext(
+                prefix = snapshot.prefix,
+                suffix = snapshot.suffix,
+                inlineContext = snapshot.inlineContext,
+            ),
+            text,
+        )
+    }
 
-        return null
+    private fun shouldBypassPsiValidation(
+        profile: LanguageCorrectnessProfile,
+        request: ProviderRequest,
+        snapshot: CompletionContextSnapshot,
+        candidate: InlineCompletionCandidate,
+    ): Boolean {
+        if (candidate.text.isBlank() || candidate.text.contains('\n')) return false
+
+        val context = snapshot.inlineContext ?: request.inlineContext ?: return false
+        if (!context.isDefinitionHeaderLikeContext && !context.isClassBaseListLikeContext) return false
+
+        val linePrefix = request.prefix.substringAfterLast('\n').trimStart()
+        return profile.definitionHeaderBypassPrefixes.any { it.matches(linePrefix) }
     }
 
     private fun causesBracketUnderflow(prefix: String, candidateText: String, opening: Char, closing: Char): Boolean {
@@ -224,30 +252,10 @@ internal object InlineCorrectnessFilter {
         return false
     }
 
-    private fun hasPythonIndentationIssue(snapshot: CompletionContextSnapshot, candidateText: String): Boolean {
-        if (!candidateText.contains('\n')) return false
-        val lines = candidateText.replace("\r", "").lines()
-        if (lines.size < 2) return false
-
-        val relevantHeader = snapshot.inlineContext?.isDefinitionHeaderLikeContext == true ||
-            snapshot.inlineContext?.isFreshBlockBodyContext == true ||
-            snapshot.prefix.trimEnd().endsWith(":") ||
-            lines.first().trimEnd().endsWith(":")
-        if (!relevantHeader) return false
-
-        val currentIndent = snapshot.prefix
-            .substringAfterLast('\n', "")
-            .takeWhile { it == ' ' || it == '\t' }
-            .length
-        val firstBodyLine = lines.drop(1).firstOrNull { it.isNotBlank() } ?: return false
-        val candidateIndent = firstBodyLine.takeWhile { it == ' ' || it == '\t' }.length
-        return candidateIndent < currentIndent + PYTHON_BLOCK_INDENT
-    }
-
     private fun shouldInspectIdentifier(
         element: PsiElement,
         introducedIdentifiers: Set<String>,
-        profile: CorrectnessProfile,
+        profile: LanguageCorrectnessProfile,
     ): Boolean {
         val text = element.text
         if (!element.references.any()) return false
@@ -263,11 +271,11 @@ internal object InlineCorrectnessFilter {
         }
 
     private fun introducedIdentifiers(
-        profile: CorrectnessProfile,
+        profile: LanguageCorrectnessProfile,
         candidateText: String,
     ): Set<String> {
         val identifiers = linkedSetOf<String>()
-        GENERIC_DECLARATION_PATTERNS.forEach { regex ->
+        profile.declarationPatterns.forEach { regex ->
             regex.findAll(candidateText).forEach { match ->
                 match.groups.drop(1).mapNotNull { it?.value }
                     .filter { IDENTIFIER.matches(it) }
@@ -275,39 +283,28 @@ internal object InlineCorrectnessFilter {
             }
         }
 
-        when (profile.family) {
-            LanguageFamily.PYTHON -> {
-                PYTHON_DECLARATION_PATTERNS.forEach { regex ->
-                    regex.findAll(candidateText).forEach { match ->
-                        match.groups.drop(1).mapNotNull { it?.value }.forEach(identifiers::add)
-                    }
-                }
-                FUNCTION_SIGNATURE.findAll(candidateText)
-                    .flatMap { parameterIdentifiers(it.groupValues[1], profile.family).asSequence() }
-                    .forEach(identifiers::add)
-            }
-            LanguageFamily.JVM,
-            LanguageFamily.GO,
-            LanguageFamily.JAVASCRIPT_OR_TYPESCRIPT,
-            LanguageFamily.GENERIC -> {
-                FUNCTION_SIGNATURE.findAll(candidateText)
-                    .flatMap { parameterIdentifiers(it.groupValues[1], profile.family).asSequence() }
-                    .forEach(identifiers::add)
-            }
+        profile.functionSignaturePatterns.forEach { regex ->
+            regex.findAll(candidateText)
+                .mapNotNull { match -> match.groupValues.getOrNull(1) }
+                .flatMap { parameterIdentifiers(it, profile.parameterStyle).asSequence() }
+                .forEach(identifiers::add)
         }
 
         return identifiers
     }
 
-    private fun parameterIdentifiers(signatureBody: String, family: LanguageFamily): Set<String> {
+    private fun parameterIdentifiers(
+        signatureBody: String,
+        style: CorrectnessParameterStyle,
+    ): Set<String> {
         if (signatureBody.isBlank()) return emptySet()
         val identifiers = linkedSetOf<String>()
         signatureBody.split(',')
             .map(String::trim)
             .filter(String::isNotBlank)
             .forEach { parameter ->
-                when (family) {
-                    LanguageFamily.PYTHON -> {
+                when (style) {
+                    CorrectnessParameterStyle.PYTHON -> {
                         val pythonName = parameter
                             .substringBefore(':')
                             .substringBefore('=')
@@ -315,7 +312,7 @@ internal object InlineCorrectnessFilter {
                             .trim()
                         if (IDENTIFIER.matches(pythonName)) identifiers += pythonName
                     }
-                    else -> {
+                    CorrectnessParameterStyle.SPACE_OR_TYPE_PREFIX -> {
                         val kotlinName = parameter.substringBefore(':').trim().substringAfterLast(' ')
                         val assignmentName = parameter.substringBefore('=').trim().substringAfterLast(' ')
                         val fallback = assignmentName.ifBlank { kotlinName }
@@ -326,73 +323,9 @@ internal object InlineCorrectnessFilter {
         return identifiers
     }
 
-    private fun profileFor(family: LanguageFamily): CorrectnessProfile =
-        when (family) {
-            LanguageFamily.PYTHON -> CorrectnessProfile(
-                family = family,
-                maxSyntaxErrors = 0,
-                maxUnresolvedReferences = 1,
-                builtIns = PYTHON_BUILT_INS,
-            )
-            LanguageFamily.JVM -> CorrectnessProfile(
-                family = family,
-                maxSyntaxErrors = 0,
-                maxUnresolvedReferences = 1,
-                builtIns = JVM_BUILT_INS,
-            )
-            LanguageFamily.JAVASCRIPT_OR_TYPESCRIPT -> CorrectnessProfile(
-                family = family,
-                maxSyntaxErrors = 0,
-                maxUnresolvedReferences = 2,
-                builtIns = JAVASCRIPT_BUILT_INS,
-            )
-            LanguageFamily.GO -> CorrectnessProfile(
-                family = family,
-                maxSyntaxErrors = 0,
-                maxUnresolvedReferences = 1,
-                builtIns = GO_BUILT_INS,
-            )
-            LanguageFamily.GENERIC -> CorrectnessProfile(
-                family = family,
-                maxSyntaxErrors = 1,
-                maxUnresolvedReferences = 3,
-            )
-        }
-
-    private data class CorrectnessProfile(
-        val family: LanguageFamily,
-        val maxSyntaxErrors: Int,
-        val maxUnresolvedReferences: Int,
-        val builtIns: Set<String> = emptySet(),
-    )
-
     private const val DEFAULT_TIME_LIMIT_MS = 50L
-    private const val PYTHON_BLOCK_INDENT = 4
     private val BRACKET_PAIRS = listOf('(' to ')', '[' to ']', '{' to '}')
     private val QUOTE_CHARS = listOf('"', '\'')
     private val IDENTIFIER = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
     private val REFERENCE_TEXT = Regex("""[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*""")
-    private val GENERIC_DECLARATION_PATTERNS = listOf(
-        Regex("""\b(?:class|interface|enum|object|struct|type|trait)\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\b(?:val|var|const|let)\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*:="""),
-        Regex("""\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\b"""),
-        Regex("""\bimport\s+[A-Za-z0-9_.*]+\s+as\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\bcatch\s*\(\s*[^)]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)"""),
-    )
-    private val PYTHON_DECLARATION_PATTERNS = listOf(
-        Regex("""\b(?:async\s+def|def)\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\bclass\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\bfrom\s+[A-Za-z0-9_.]+\s+import\s+[A-Za-z0-9_.*]+\s+as\s+([A-Za-z_][A-Za-z0-9_]*)"""),
-        Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*="""),
-    )
-    private val FUNCTION_SIGNATURE = Regex("""\b(?:async\s+def|def|fun|func|function)\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)""")
-    private val PYTHON_BUILT_INS = setOf("self", "cls", "True", "False", "None", "len", "sum", "list", "dict", "set", "str", "int", "float", "bool", "range", "print")
-    private val JVM_BUILT_INS = setOf(
-        "this", "super", "true", "false", "null",
-        "String", "Int", "Long", "Double", "Boolean", "List", "Map", "Set",
-        "int", "long", "double", "boolean", "void", "char", "byte", "short", "float",
-    )
-    private val JAVASCRIPT_BUILT_INS = setOf("this", "true", "false", "null", "undefined", "Promise", "Array", "Object", "console")
-    private val GO_BUILT_INS = setOf("nil", "true", "false", "string", "int", "error", "len", "make", "append")
 }

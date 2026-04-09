@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InlineConfidenceScorerTest : BasePlatformTestCase() {
@@ -46,14 +46,14 @@ class InlineConfidenceScorerTest : BasePlatformTestCase() {
             insertionOffset = 0,
             confidenceScore = 0.95,
         )
-        val request = AutocompleteRequest(prefix = "", suffix = "", filePath = null, language = null)
+        val request = ProviderRequest(prefix = "", suffix = "", filePath = null, language = null)
         val score = InlineConfidenceScorer.score(candidate, request)
         assertEquals(0.95, score, 0.001)
     }
 
     private fun score(text: String, prefix: String, suffix: String): Double {
         val candidate = InlineCompletionCandidate(text = text, insertionOffset = prefix.length)
-        val request = AutocompleteRequest(prefix = prefix, suffix = suffix, filePath = null, language = null)
+        val request = ProviderRequest(prefix = prefix, suffix = suffix, filePath = null, language = null)
         return InlineConfidenceScorer.score(candidate, request)
     }
 }

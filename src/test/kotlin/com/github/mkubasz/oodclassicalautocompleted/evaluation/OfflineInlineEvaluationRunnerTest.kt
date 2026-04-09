@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.evaluation
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunk
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunkKind
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunk
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunkKind
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

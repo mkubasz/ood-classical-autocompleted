@@ -1,11 +1,11 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 
 internal object InlineConfidenceScorer {
 
-    fun score(candidate: InlineCompletionCandidate, request: AutocompleteRequest): Double {
+    fun score(candidate: InlineCompletionCandidate, request: ProviderRequest): Double {
         if (candidate.confidenceScore != null) return candidate.confidenceScore
         val text = candidate.text
         if (text.isBlank()) return 0.0

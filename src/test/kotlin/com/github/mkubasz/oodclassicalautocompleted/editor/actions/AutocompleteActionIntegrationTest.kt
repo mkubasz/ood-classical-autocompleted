@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.actions
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.NextEditCompletionCandidate
 import com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.AutocompleteService
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.AnActionEvent

@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.settings
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsGenerationOptions
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsNextEditContextOptions
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.inception.InceptionLabsGenerationOptions
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.inception.InceptionLabsNextEditContextOptions
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 

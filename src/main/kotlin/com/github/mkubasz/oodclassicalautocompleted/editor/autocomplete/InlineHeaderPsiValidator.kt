@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor
@@ -26,7 +26,7 @@ internal object InlineHeaderPsiValidator {
 
     fun validate(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot?,
     ): Result {
         if (!shouldValidate(request, snapshot)) return Result.Valid
@@ -42,7 +42,7 @@ internal object InlineHeaderPsiValidator {
     }
 
     private fun shouldValidate(
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot?,
     ): Boolean {
         val language = request.language.orEmpty().lowercase()
@@ -66,13 +66,13 @@ internal object InlineHeaderPsiValidator {
 
     private fun hasRelevantError(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot,
     ): Boolean = findRelevantError(candidate, request, snapshot) != null
 
     private fun findRelevantError(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot,
     ): PsiErrorElement? = runCatching {
         ApplicationManager.getApplication().runReadAction<PsiErrorElement?> {
@@ -97,7 +97,7 @@ internal object InlineHeaderPsiValidator {
 
     private fun buildValidationSource(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
     ): ValidationSource? {
         val currentLinePrefix = request.prefix.substringAfterLast('\n')
         val currentLineSuffix = request.suffix.substringBefore('\n')
@@ -156,7 +156,7 @@ internal object InlineHeaderPsiValidator {
         return decorators.toList()
     }
 
-    private fun needsSyntheticBody(fragment: String, request: AutocompleteRequest): Boolean {
+    private fun needsSyntheticBody(fragment: String, request: ProviderRequest): Boolean {
         val context = request.inlineContext ?: return false
         if (!context.isDefinitionHeaderLikeContext && !context.isClassBaseListLikeContext) return false
 
@@ -173,7 +173,7 @@ internal object InlineHeaderPsiValidator {
         }
     }
 
-    private fun expectedContinuation(request: AutocompleteRequest): String? {
+    private fun expectedContinuation(request: ProviderRequest): String? {
         val context = request.inlineContext ?: return null
         val prefix = context.classBaseReferencePrefix ?: return null
         val matchingType = context.matchingTypeNames.singleOrNull {

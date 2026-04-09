@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,7 +9,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun insertsLeadingNewlineBeforeAssignmentAfterClosedStatement() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "logger.setLevel(logging.DEBUG)",
             suffix = "",
             filePath = "logger.py",
@@ -30,7 +30,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun insertsLeadingNewlineBeforeFunctionDefinitionAfterClosedStatement() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "logger.addHandler(handler)",
             suffix = "",
             filePath = "logger.py",
@@ -51,7 +51,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun keepsRegularSameLineCompletionUnchanged() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "handler = logging.File",
             suffix = "",
             filePath = "logger.py",
@@ -72,7 +72,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun doesNotInsertNewlineWhenCompletingIncompleteDefHeader() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "def proje",
             suffix = "",
             filePath = "demo.py",
@@ -92,7 +92,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun doesNotInsertNewlineWhenCompletingIncompleteClassHeader() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "class MyMod",
             suffix = "",
             filePath = "models.py",
@@ -112,7 +112,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun doesNotInsertNewlineWhenCompletingTokenInsideFunctionCall() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "                metadata=RecordedMessageMetad",
             suffix = "",
             filePath = "demo.py",
@@ -132,7 +132,7 @@ class InlineSuggestionBoundaryAdjusterTest {
 
     @Test
     fun doesNotInsertNewlineForKeywordArgCompletion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "        result = process_da",
             suffix = "",
             filePath = "demo.py",

@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.Project

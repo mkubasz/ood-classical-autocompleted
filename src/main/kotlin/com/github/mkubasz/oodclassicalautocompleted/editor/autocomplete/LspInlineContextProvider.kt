@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.ResolvedDefinition
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ResolvedDefinition
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem

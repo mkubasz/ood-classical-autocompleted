@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.settings
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsNextEditContextOptions
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.inception.InceptionLabsNextEditContextOptions
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InceptionLabsAdvancedSettingsTest : BasePlatformTestCase() {

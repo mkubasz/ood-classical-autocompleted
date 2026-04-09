@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 
 internal object BaseInlineContextHeuristics {
 
@@ -70,7 +70,7 @@ internal object BaseInlineContextHeuristics {
 
     private fun isDefinitionHeaderLikeContext(currentLinePrefix: String): Boolean {
         val trimmed = currentLinePrefix.trimStart()
-        return DEFINITION_PREFIXES.any(trimmed::startsWith) ||
+        return startsWithDefinitionKeyword(trimmed) ||
             (trimmed.startsWith("class ") && '(' in trimmed)
     }
 
@@ -115,6 +115,7 @@ internal object BaseInlineContextHeuristics {
                     "interface" -> "Interface"
                     "struct" -> "Struct"
                     "enum" -> "Enum"
+                    "object" -> "Object"
                     else -> null
                 }
             }
@@ -122,12 +123,48 @@ internal object BaseInlineContextHeuristics {
             .takeLast(MAX_ENCLOSING_KINDS)
             .reversed()
 
+    private fun startsWithDefinitionKeyword(trimmed: String): Boolean =
+        DEFINITION_PREFIXES.any(trimmed::startsWith) || MODIFIED_DEFINITION_PREFIX_PATTERN.containsMatchIn(trimmed)
+
     private val COMMENT_PREFIXES = listOf("#", "//", "/*", "*")
-    private val DEFINITION_PREFIXES = listOf("def ", "fun ", "function ", "class ", "interface ", "struct ", "enum ")
+    private val DEFINITION_PREFIXES = listOf("def ", "fun ", "function ", "class ", "interface ", "struct ", "enum ", "object ")
+    private val KOTLIN_DECLARATION_MODIFIERS = listOf(
+        "public",
+        "private",
+        "protected",
+        "internal",
+        "abstract",
+        "open",
+        "sealed",
+        "data",
+        "enum",
+        "annotation",
+        "value",
+        "inner",
+        "override",
+        "expect",
+        "actual",
+        "operator",
+        "infix",
+        "tailrec",
+        "suspend",
+        "external",
+        "inline",
+        "final",
+        "const",
+        "lateinit",
+    )
+    private val MODIFIED_DEFINITION_PREFIX_PATTERN = Regex(
+        """^(?:(?:${KOTLIN_DECLARATION_MODIFIERS.joinToString("|")})\s+)+(?:class|fun|interface|object)\b"""
+    )
     private val CLASS_BASE_REFERENCE_PATTERN = Regex("""[A-Za-z_][A-Za-z0-9_\.]*$""")
-    private val CLASS_DECLARATION_PATTERN = Regex("""\bclass\s+([A-Za-z_][A-Za-z0-9_]*)""")
+    private val CLASS_DECLARATION_PATTERN = Regex(
+        """\b(?:(?:${KOTLIN_DECLARATION_MODIFIERS.joinToString("|")})\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)"""
+    )
     private val DEFINITION_NAME_PATTERN =
-        Regex("""\b(def|fun|function|class|interface|struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)""")
+        Regex(
+            """\b(?:(?:${KOTLIN_DECLARATION_MODIFIERS.joinToString("|")})\s+)*(def|fun|function|class|interface|struct|enum|object)\s+([A-Za-z_][A-Za-z0-9_]*)"""
+        )
     private const val MAX_MATCHING_TYPES = 12
     private const val MAX_ENCLOSING_NAMES = 4
     private const val MAX_ENCLOSING_KINDS = 6

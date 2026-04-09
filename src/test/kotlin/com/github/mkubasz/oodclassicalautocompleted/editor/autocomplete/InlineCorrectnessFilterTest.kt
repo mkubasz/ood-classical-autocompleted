@@ -1,7 +1,9 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InlineCorrectnessFilterTest : BasePlatformTestCase() {
@@ -17,7 +19,7 @@ class InlineCorrectnessFilterTest : BasePlatformTestCase() {
             filePath = "sample.py",
             language = "python",
         )
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = snapshot.prefix,
             suffix = snapshot.suffix,
             filePath = snapshot.filePath,
@@ -72,7 +74,7 @@ class InlineCorrectnessFilterTest : BasePlatformTestCase() {
             filePath = myFixture.file.virtualFile.path,
             language = "java",
         )
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = snapshot.prefix,
             suffix = snapshot.suffix,
             filePath = snapshot.filePath,
@@ -93,11 +95,50 @@ class InlineCorrectnessFilterTest : BasePlatformTestCase() {
         assertEquals(InlineCorrectnessFilter.LanguageFamily.JVM, result.family)
     }
 
+    fun testPassesSingleLineKotlinDataClassHeaderContinuation() {
+        myFixture.configureByText(
+            "Sample.kt",
+            "data class MyC",
+        )
+        val inlineContext = InlineModelContext(
+            lexicalContext = InlineLexicalContext.CODE,
+            isDefinitionHeaderLikeContext = true,
+        )
+        val snapshot = snapshot(
+            documentText = myFixture.editor.document.text,
+            caretOffset = myFixture.editor.document.textLength,
+            filePath = myFixture.file.virtualFile.path,
+            language = "kotlin",
+            inlineContext = inlineContext,
+        )
+        val request = ProviderRequest(
+            prefix = snapshot.prefix,
+            suffix = snapshot.suffix,
+            filePath = snapshot.filePath,
+            language = snapshot.language,
+            cursorOffset = snapshot.caretOffset,
+            inlineContext = inlineContext,
+        )
+
+        val result = InlineCorrectnessFilter.check(
+            candidate = InlineCompletionCandidate(
+                text = "onfig(",
+                insertionOffset = snapshot.caretOffset,
+            ),
+            request = request,
+            snapshot = snapshot,
+        )
+
+        assertTrue("result=$result", result is InlineCorrectnessFilter.Result.Pass)
+        assertEquals(InlineCorrectnessFilter.LanguageFamily.JVM, result.family)
+    }
+
     private fun snapshot(
         documentText: String,
         caretOffset: Int,
         filePath: String,
         language: String,
+        inlineContext: InlineModelContext? = null,
     ): CompletionContextSnapshot = CompletionContextSnapshot(
         filePath = filePath,
         language = language,
@@ -108,6 +149,7 @@ class InlineCorrectnessFilterTest : BasePlatformTestCase() {
         suffix = documentText.substring(caretOffset),
         prefixWindow = documentText.substring(0, caretOffset),
         suffixWindow = documentText.substring(caretOffset),
+        inlineContext = inlineContext,
         project = project,
     )
 }

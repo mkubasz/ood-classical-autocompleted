@@ -1,10 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.evaluation
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AnthropicAutocompleteProvider
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteProvider
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsFimProvider
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunk
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunk
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.AnthropicProviderRuntime
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.InceptionLabsFimRuntime
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.InceptionLabsProviderDefaults
 import com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.CompletionContextSnapshot
 import com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete.InlineCandidatePreparation
 import kotlinx.serialization.Serializable
@@ -105,6 +105,10 @@ internal interface OfflineInlineEvaluationEngine : AutoCloseable {
     override fun close() = Unit
 }
 
+internal interface OfflineRequestProvider : AutoCloseable {
+    suspend fun complete(request: ProviderRequest): com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderResponse?
+}
+
 internal class ReplayInlineEvaluationEngine(
     replay: OfflineInlineEvaluationReplay,
 ) : OfflineInlineEvaluationEngine {
@@ -123,14 +127,14 @@ internal class ReplayInlineEvaluationEngine(
 }
 
 internal class ProviderInlineEvaluationEngine(
-    private val provider: AutocompleteProvider,
+    private val provider: OfflineRequestProvider,
     private val sourceName: String,
     private val config: OfflineInlineEvaluationConfig = OfflineInlineEvaluationConfig(),
 ) : OfflineInlineEvaluationEngine {
 
     override suspend fun predict(case: OfflineInlineEvaluationCase): OfflineInlineEvaluationPrediction {
         val split = CursorMarkedDocument.parse(case.document)
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = split.prefix,
             suffix = split.suffix,
             filePath = case.filePath,
@@ -175,7 +179,7 @@ internal class ProviderInlineEvaluationEngine(
     }
 
     override fun close() {
-        provider.dispose()
+        provider.close()
     }
 }
 
@@ -353,12 +357,20 @@ internal object OfflineInlineEvaluationEngineFactory {
             )
 
             OfflineInlineEvaluationProvider.ANTHROPIC -> ProviderInlineEvaluationEngine(
-                provider = AnthropicAutocompleteProvider(
-                    apiKey = options.apiKey ?: throw IllegalArgumentException("Anthropic evaluation requires --api-key"),
-                    baseUrl = options.baseUrl ?: DEFAULT_ANTHROPIC_BASE_URL,
-                    model = options.model ?: DEFAULT_ANTHROPIC_MODEL,
-                    contextBudgetChars = options.contextBudgetChars,
-                ),
+                provider = object : OfflineRequestProvider {
+                    private val runtime = AnthropicProviderRuntime(
+                        apiKey = options.apiKey ?: throw IllegalArgumentException("Anthropic evaluation requires --api-key"),
+                        baseUrl = options.baseUrl ?: DEFAULT_ANTHROPIC_BASE_URL,
+                        model = options.model ?: DEFAULT_ANTHROPIC_MODEL,
+                        contextBudgetChars = options.contextBudgetChars,
+                    )
+
+                    override suspend fun complete(request: ProviderRequest) = runtime.complete(request)
+
+                    override fun close() {
+                        runtime.dispose()
+                    }
+                },
                 sourceName = "anthropic",
                 config = OfflineInlineEvaluationConfig(
                     minConfidenceScore = options.minConfidenceScore,
@@ -366,12 +378,21 @@ internal object OfflineInlineEvaluationEngineFactory {
             )
 
             OfflineInlineEvaluationProvider.INCEPTION -> ProviderInlineEvaluationEngine(
-                provider = InceptionLabsFimProvider(
-                    apiKey = options.apiKey ?: throw IllegalArgumentException("Inception evaluation requires --api-key"),
-                    baseUrl = options.baseUrl ?: InceptionLabsFimProvider.DEFAULT_BASE_URL,
-                    model = options.model ?: InceptionLabsFimProvider.DEFAULT_MODEL,
-                    contextBudgetChars = options.contextBudgetChars,
-                ),
+                provider = object : OfflineRequestProvider {
+                    private val runtime = InceptionLabsFimRuntime(
+                        apiKey = options.apiKey ?: throw IllegalArgumentException("Inception evaluation requires --api-key"),
+                        baseUrl = options.baseUrl ?: InceptionLabsProviderDefaults.BASE_URL,
+                        model = options.model ?: InceptionLabsProviderDefaults.MODEL,
+                        generationOptions = com.github.mkubasz.oodclassicalautocompleted.completion.providers.inception.InceptionLabsGenerationOptions(),
+                        contextBudgetChars = options.contextBudgetChars,
+                    )
+
+                    override suspend fun complete(request: ProviderRequest) = runtime.complete(request)
+
+                    override fun close() {
+                        runtime.dispose()
+                    }
+                },
                 sourceName = "inception",
                 config = OfflineInlineEvaluationConfig(
                     minConfidenceScore = options.minConfidenceScore,

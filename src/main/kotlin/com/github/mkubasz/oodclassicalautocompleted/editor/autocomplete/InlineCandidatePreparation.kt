@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
 import com.intellij.openapi.application.ApplicationManager
 
@@ -26,12 +26,12 @@ internal object InlineCandidatePreparation {
 
     data class PreparationResult(
         val candidates: List<InlineCompletionCandidate>,
-        val retryRequest: AutocompleteRequest? = null,
+        val retryRequest: ProviderRequest? = null,
     )
 
     fun prepare(
         rawCandidates: List<InlineCompletionCandidate>,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
     ): List<InlineCompletionCandidate> = prepare(
@@ -44,7 +44,7 @@ internal object InlineCandidatePreparation {
 
     fun prepare(
         rawCandidates: List<InlineCompletionCandidate>,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
         options: Options,
@@ -58,7 +58,7 @@ internal object InlineCandidatePreparation {
 
     fun prepareWithDiagnostics(
         rawCandidates: List<InlineCompletionCandidate>,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
     ): PreparationResult = prepareWithDiagnostics(
@@ -71,12 +71,12 @@ internal object InlineCandidatePreparation {
 
     fun prepareWithDiagnostics(
         rawCandidates: List<InlineCompletionCandidate>,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
         options: Options,
     ): PreparationResult {
-        var retryRequest: AutocompleteRequest? = null
+        var retryRequest: ProviderRequest? = null
 
         val candidates = rawCandidates.mapNotNull { candidate ->
             val normalizedText = if (candidate.isExactInsertion) {
@@ -132,9 +132,9 @@ internal object InlineCandidatePreparation {
     }
 
     private fun buildRetryRequest(
-        request: AutocompleteRequest,
+        request: ProviderRequest,
         validation: InlineHeaderPsiValidator.Result.Retryable,
-    ): AutocompleteRequest {
+    ): ProviderRequest {
         val inlineContext = request.inlineContext ?: return request
         return request.copy(
             inlineContext = inlineContext.copy(

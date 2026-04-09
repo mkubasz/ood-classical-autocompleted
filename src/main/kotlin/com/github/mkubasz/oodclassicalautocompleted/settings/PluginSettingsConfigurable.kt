@@ -1,7 +1,7 @@
 package com.github.mkubasz.oodclassicalautocompleted.settings
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsFimProvider
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InceptionLabsNextEditContextOptions
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.InceptionLabsProviderDefaults
+import com.github.mkubasz.oodclassicalautocompleted.completion.providers.inception.InceptionLabsNextEditContextOptions
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
@@ -282,11 +282,11 @@ class PluginSettingsConfigurable : Configurable {
             }
             row("Base URL:") {
                 cell(inceptionLabsBaseUrlField!!)
-                    .comment("Default: ${InceptionLabsFimProvider.DEFAULT_BASE_URL}")
+                    .comment("Default: ${InceptionLabsProviderDefaults.BASE_URL}")
             }
             row("Model:") {
                 cell(inceptionLabsModelField!!)
-                    .comment("Default: ${InceptionLabsFimProvider.DEFAULT_MODEL}")
+                    .comment("Default: ${InceptionLabsProviderDefaults.MODEL}")
             }
         }
     }

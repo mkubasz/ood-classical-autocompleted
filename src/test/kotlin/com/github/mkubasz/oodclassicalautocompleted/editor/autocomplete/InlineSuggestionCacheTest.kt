@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InlineSuggestionCacheTest : BasePlatformTestCase() {

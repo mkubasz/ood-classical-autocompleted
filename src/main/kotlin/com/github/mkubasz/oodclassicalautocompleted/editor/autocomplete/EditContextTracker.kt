@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.CodeSnippet
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.CodeSnippet
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project

@@ -1,6 +1,6 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.NextEditCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.NextEditCompletionCandidate
 
 internal object NextEditCandidatePolicy {
 

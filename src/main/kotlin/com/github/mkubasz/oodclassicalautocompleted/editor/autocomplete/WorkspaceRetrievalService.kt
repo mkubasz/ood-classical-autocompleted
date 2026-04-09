@@ -1,7 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunk
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.RetrievedContextChunkKind
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunk
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.RetrievedContextChunkKind
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.WorkspaceRetrievalProfile
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.WorkspaceStructurePattern
+import com.github.mkubasz.oodclassicalautocompleted.completion.languages.common.GenericLanguageSupport
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
@@ -20,12 +23,13 @@ class WorkspaceRetrievalService(
     internal fun retrieve(
         snapshot: CompletionContextSnapshot,
         maxChunks: Int,
+        retrievalProfile: WorkspaceRetrievalProfile = GenericLanguageSupport.retrievalProfile(),
     ): WorkspaceRetrievalResult {
         if (snapshot.isTerminal || snapshot.project == null || maxChunks <= 0) {
             return WorkspaceRetrievalResult()
         }
         val query = WorkspaceRetrievalQuery.build(snapshot) ?: return WorkspaceRetrievalResult()
-        val cacheKey = buildCacheKey(snapshot, query, maxChunks)
+        val cacheKey = buildCacheKey(snapshot, query, maxChunks, retrievalProfile)
         val now = System.currentTimeMillis()
         cache[cacheKey]?.takeIf { it.expiresAt > now }?.let { entry ->
             return WorkspaceRetrievalResult(
@@ -36,7 +40,12 @@ class WorkspaceRetrievalService(
         }
 
         val chunks = ApplicationManager.getApplication().runReadAction<List<RetrievedContextChunk>> {
-            collect(query = query, snapshot = snapshot, maxChunks = maxChunks)
+            collect(
+                query = query,
+                snapshot = snapshot,
+                maxChunks = maxChunks,
+                retrievalProfile = retrievalProfile,
+            )
         }
         cache[cacheKey] = CacheEntry(expiresAt = now + CACHE_TTL_MS, chunks = chunks)
         trimCache()
@@ -51,6 +60,7 @@ class WorkspaceRetrievalService(
         query: WorkspaceRetrievalQuery,
         snapshot: CompletionContextSnapshot,
         maxChunks: Int,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): List<RetrievedContextChunk> {
         val fileIndex = ProjectFileIndex.getInstance(project)
         val candidates = mutableListOf<WorkspaceRetrievalCandidate>()
@@ -68,6 +78,7 @@ class WorkspaceRetrievalService(
                 filePath = file.path,
                 text = text,
                 query = query,
+                retrievalProfile = retrievalProfile,
             )
             true
         }
@@ -106,6 +117,7 @@ class WorkspaceRetrievalService(
         filePath: String,
         text: String,
         query: WorkspaceRetrievalQuery,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): List<WorkspaceRetrievalCandidate> {
         val lowerText = text.lowercase()
         val lowerPath = filePath.lowercase()
@@ -117,12 +129,17 @@ class WorkspaceRetrievalService(
         val coveredLines = mutableSetOf<Int>()
         val candidates = mutableListOf<WorkspaceRetrievalCandidate>()
 
-        extractImportsCandidate(filePath, lines, query)?.let { candidate ->
+        extractImportsCandidate(filePath, lines, query, retrievalProfile)?.let { candidate ->
             candidates += candidate
             coveredLines += candidate.startLine until candidate.endLineExclusive
         }
 
-        extractStructuralCandidates(filePath, lines, query).forEach { candidate ->
+        extractStructuralCandidates(
+            filePath = filePath,
+            lines = lines,
+            query = query,
+            retrievalProfile = retrievalProfile,
+        ).forEach { candidate ->
             candidates += candidate
             coveredLines += candidate.startLine until candidate.endLineExclusive
         }
@@ -132,6 +149,7 @@ class WorkspaceRetrievalService(
             lines = lines,
             query = query,
             coveredLines = coveredLines,
+            retrievalProfile = retrievalProfile,
         )
 
         return candidates
@@ -144,13 +162,15 @@ class WorkspaceRetrievalService(
         filePath: String,
         lines: List<String>,
         query: WorkspaceRetrievalQuery,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): WorkspaceRetrievalCandidate? {
         val importLineIndices = mutableListOf<Int>()
+        val importPrefixes = retrievalProfile.importPrefixes.ifEmpty { DEFAULT_IMPORT_PREFIXES }
         lines.forEachIndexed { index, line ->
             val trimmed = line.trim()
             when {
                 trimmed.isBlank() && importLineIndices.isEmpty() -> Unit
-                IMPORT_PREFIXES.any(trimmed::startsWith) -> importLineIndices += index
+                importPrefixes.any(trimmed::startsWith) -> importLineIndices += index
                 importLineIndices.isNotEmpty() -> return@forEachIndexed
                 else -> return@forEachIndexed
             }
@@ -188,10 +208,12 @@ class WorkspaceRetrievalService(
         filePath: String,
         lines: List<String>,
         query: WorkspaceRetrievalQuery,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): List<WorkspaceRetrievalCandidate> {
+        val patterns = retrievalProfile.structuralPatterns.ifEmpty { DEFAULT_STRUCTURAL_PATTERNS }
         val matches = mutableListOf<HeaderMatch>()
         lines.forEachIndexed { index, line ->
-            STRUCTURAL_PATTERNS.firstNotNullOfOrNull { pattern ->
+            patterns.firstNotNullOfOrNull { pattern ->
                 pattern.regex.find(line)?.groups?.get(1)?.value?.takeIf { it.isNotBlank() }?.let { symbolName ->
                     HeaderMatch(index = index, symbolName = symbolName, kind = pattern.kind)
                 }
@@ -202,7 +224,7 @@ class WorkspaceRetrievalService(
         return matches.mapIndexedNotNull { index, match ->
             val endExclusive = minOf(
                 if (index + 1 < matches.size) matches[index + 1].index else lines.size,
-                match.index + STRUCTURAL_CHUNK_MAX_LINES,
+                match.index + retrievalProfile.structuralChunkMaxLines,
             )
             val content = lines.subList(match.index, endExclusive)
                 .joinToString("\n")
@@ -238,6 +260,7 @@ class WorkspaceRetrievalService(
         lines: List<String>,
         query: WorkspaceRetrievalQuery,
         coveredLines: Set<Int>,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): List<WorkspaceRetrievalCandidate> {
         val candidates = linkedMapOf<String, WorkspaceRetrievalCandidate>()
         lines.forEachIndexed { index, line ->
@@ -245,8 +268,8 @@ class WorkspaceRetrievalService(
             val score = scoreLine(line, filePath, query)
             if (score <= 0.0) return@forEachIndexed
 
-            val start = (index - CONTEXT_LINES_BEFORE_HIT).coerceAtLeast(0)
-            val endExclusive = (start + CHUNK_LINE_WINDOW).coerceAtMost(lines.size)
+            val start = (index - retrievalProfile.contextLinesBeforeHit).coerceAtLeast(0)
+            val endExclusive = (start + retrievalProfile.lineWindowSize).coerceAtMost(lines.size)
             val content = lines.subList(start, endExclusive)
                 .joinToString("\n")
                 .trimEnd()
@@ -271,7 +294,7 @@ class WorkspaceRetrievalService(
 
         return candidates.values
             .sortedByDescending { it.stageOneScore }
-            .take(MAX_LINE_WINDOWS_PER_FILE)
+            .take(retrievalProfile.maxLineWindowsPerFile)
     }
 
     private fun rerank(
@@ -437,6 +460,7 @@ class WorkspaceRetrievalService(
         snapshot: CompletionContextSnapshot,
         query: WorkspaceRetrievalQuery,
         maxChunks: Int,
+        retrievalProfile: WorkspaceRetrievalProfile,
     ): String = buildString {
         append(snapshot.filePath)
         append('|')
@@ -447,6 +471,8 @@ class WorkspaceRetrievalService(
         append(query.pathTerms.joinToString(","))
         append('|')
         append(maxChunks)
+        append('|')
+        append(retrievalProfile.cacheKey())
     }
 
     private fun shouldConsider(file: VirtualFile, currentFilePath: String?): Boolean {
@@ -494,11 +520,6 @@ class WorkspaceRetrievalService(
         val kind: RetrievedContextChunkKind,
     )
 
-    private data class StructuralPattern(
-        val regex: Regex,
-        val kind: RetrievedContextChunkKind,
-    )
-
     private data class WorkspaceRetrievalCandidate(
         val filePath: String,
         val content: String,
@@ -533,12 +554,8 @@ class WorkspaceRetrievalService(
         private const val MAX_STAGE_ONE_CANDIDATES = 64
         private const val MAX_RERANK_CANDIDATES = 24
         private const val MAX_CHUNKS_PER_FILE = 3
-        private const val MAX_LINE_WINDOWS_PER_FILE = 1
         private const val MAX_FILE_BYTES = 200_000L
         private const val MAX_CHUNK_CHARS = 700
-        private const val CHUNK_LINE_WINDOW = 14
-        private const val STRUCTURAL_CHUNK_MAX_LINES = 18
-        private const val CONTEXT_LINES_BEFORE_HIT = 2
         private const val SUBSTRING_MATCH_RATIO = 0.35
         private const val PATH_TOKEN_MATCH_BOOST = 1.25
         private const val PATH_SUBSTRING_MATCH_BOOST = 0.75
@@ -555,14 +572,14 @@ class WorkspaceRetrievalService(
         private const val RECEIVER_MEMBER_BOOST = 0.8
         private const val RESOLVED_REFERENCE_BOOST = 0.9
         private const val SYMBOL_CHUNK_BOOST = 0.5
-        private val IMPORT_PREFIXES = listOf("package ", "import ", "from ", "using ")
-        private val STRUCTURAL_PATTERNS = listOf(
-            StructuralPattern(Regex("""^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
-            StructuralPattern(Regex("""^\s*(?:fun|class|interface|enum|object|data\s+class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
-            StructuralPattern(Regex("""^\s*(?:function|class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
-            StructuralPattern(Regex("""^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
-            StructuralPattern(Regex("""^\s*type\s+([A-Za-z_][A-Za-z0-9_]*)\s+"""), RetrievedContextChunkKind.SYMBOL),
-            StructuralPattern(Regex("""^\s*(?:const|val|var|let)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.CONSTANT),
+        private val DEFAULT_IMPORT_PREFIXES = listOf("package ", "import ", "from ", "using ")
+        private val DEFAULT_STRUCTURAL_PATTERNS = listOf(
+            WorkspaceStructurePattern(Regex("""^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
+            WorkspaceStructurePattern(Regex("""^\s*(?:fun|class|interface|enum|object|data\s+class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
+            WorkspaceStructurePattern(Regex("""^\s*(?:function|class)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
+            WorkspaceStructurePattern(Regex("""^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.SYMBOL),
+            WorkspaceStructurePattern(Regex("""^\s*type\s+([A-Za-z_][A-Za-z0-9_]*)\s+"""), RetrievedContextChunkKind.SYMBOL),
+            WorkspaceStructurePattern(Regex("""^\s*(?:const|val|var|let)\s+([A-Za-z_][A-Za-z0-9_]*)"""), RetrievedContextChunkKind.CONSTANT),
         )
         private val IGNORED_PATH_SEGMENTS = listOf("/build/", "/out/", "/.git/", "/.idea/", "/node_modules/", "/.gradle/")
         private const val LOCAL_SYMBOL_BUCKET = "local_symbol"

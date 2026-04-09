@@ -1,8 +1,10 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.psi.PsiElement
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.lang.reflect.Proxy
+import java.util.concurrent.TimeUnit
 
 class PsiInlineContextBuilderTest : BasePlatformTestCase() {
 
@@ -96,6 +98,30 @@ class PsiInlineContextBuilderTest : BasePlatformTestCase() {
         assertTrue(context?.isAfterMemberAccess == true)
     }
 
+    fun testBuildCanRunOnBackgroundThreadWithoutExplicitReadAction() {
+        myFixture.configureByText(
+            "Foo.java",
+            """
+            class Foo {
+                private int value;
+
+                void run() {
+                    this.
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val document = myFixture.editor.document
+        val caretOffset = document.text.indexOf("this.") + "this.".length
+        val future = ApplicationManager.getApplication().executeOnPooledThread<Any?> {
+            PsiInlineContextBuilder.build(project, document, document.text, caretOffset)
+        }
+        val context = future.get(10, TimeUnit.SECONDS)
+
+        assertNotNull(context)
+    }
+
     fun testBuildMarksDefinitionHeaderAndParameterListContextFromPlainText() {
         myFixture.configureByText(
             "Context.txt",
@@ -112,6 +138,20 @@ class PsiInlineContextBuilderTest : BasePlatformTestCase() {
         assertNotNull(context)
         assertTrue(context?.isDefinitionHeaderLikeContext == true)
         assertTrue(context?.isInParameterListLikeContext == true)
+    }
+
+    fun testBuildMarksKotlinDataClassHeaderContextBeforeConstructorParens() {
+        myFixture.configureByText(
+            "Person.kt",
+            "data class My",
+        )
+
+        val document = myFixture.editor.document
+        val context = PsiInlineContextBuilder.build(project, document, document.text, document.textLength)
+
+        assertNotNull(context)
+        assertTrue("context=$context", context?.isDefinitionHeaderLikeContext == true)
+        assertFalse("context=$context", context?.isInParameterListLikeContext == true)
     }
 
     fun testBuildCapturesClassBaseListContextAndMatchingTypesFromPlainText() {

@@ -1,11 +1,12 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.ResolvedDefinition
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ResolvedDefinition
 import com.intellij.lang.LanguageParserDefinitions
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -18,9 +19,9 @@ internal object PsiInlineContextBuilder {
         document: Document,
         documentText: String,
         caretOffset: Int,
-    ): InlineModelContext? {
-        val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document) ?: return null
-        val contextLeaf = findContextLeaf(psiFile, caretOffset) ?: return null
+    ): InlineModelContext? = ApplicationManager.getApplication().runReadAction<InlineModelContext?> {
+        val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document) ?: return@runReadAction null
+        val contextLeaf = findContextLeaf(psiFile, caretOffset) ?: return@runReadAction null
         val parentChain = generateSequence(contextLeaf) { it.parent }.take(MAX_PARENT_DEPTH).toList()
         val parserDefinition = LanguageParserDefinitions.INSTANCE.forLanguage(contextLeaf.language)
         val lexicalContext = classifyLexicalContext(contextLeaf, parserDefinition)
@@ -64,7 +65,7 @@ internal object PsiInlineContextBuilder {
             crossFileDefinitions = HeuristicContextFallback.extractDefinitions(documentText, caretOffset)
         }
 
-        return InlineModelContext(
+        return@runReadAction InlineModelContext(
             lexicalContext = lexicalContext,
             enclosingNames = parentChain
                 .mapNotNull { (it as? PsiNamedElement)?.name?.takeIf(String::isNotBlank) }
@@ -160,7 +161,7 @@ internal object PsiInlineContextBuilder {
         parentChain: List<PsiElement>,
     ): Boolean {
         val trimmed = currentLinePrefix.trimStart()
-        if (DEFINITION_PREFIXES.any(trimmed::startsWith)) {
+        if (startsWithDefinitionKeyword(trimmed)) {
             return true
         }
 
@@ -504,7 +505,7 @@ internal object PsiInlineContextBuilder {
         if (lines.isEmpty()) return ""
 
         val firstLine = lines.first()
-        val isDefinition = DEFINITION_PREFIXES.any { firstLine.trimStart().startsWith(it) } ||
+        val isDefinition = startsWithDefinitionKeyword(firstLine.trimStart()) ||
             firstLine.trimStart().let { it.startsWith("class ") || it.startsWith("interface ") }
 
         return if (isDefinition) {
@@ -513,6 +514,9 @@ internal object PsiInlineContextBuilder {
             firstLine.take(MAX_SIGNATURE_CHARS).trim()
         }
     }
+
+    private fun startsWithDefinitionKeyword(trimmed: String): Boolean =
+        DEFINITION_PREFIXES.any(trimmed::startsWith) || MODIFIED_DEFINITION_PREFIX_PATTERN.containsMatchIn(trimmed)
 
     internal fun safeElementText(element: PsiElement): String? = runCatching {
         if (!element.isValid) return null
@@ -525,7 +529,36 @@ internal object PsiInlineContextBuilder {
         val snippet: String,
     )
 
-    private val DEFINITION_PREFIXES = listOf("def ", "fun ", "function ", "class ", "interface ", "struct ", "enum ")
+    private val DEFINITION_PREFIXES = listOf("def ", "fun ", "function ", "class ", "interface ", "struct ", "enum ", "object ")
+    private val KOTLIN_DECLARATION_MODIFIERS = listOf(
+        "public",
+        "private",
+        "protected",
+        "internal",
+        "abstract",
+        "open",
+        "sealed",
+        "data",
+        "enum",
+        "annotation",
+        "value",
+        "inner",
+        "override",
+        "expect",
+        "actual",
+        "operator",
+        "infix",
+        "tailrec",
+        "suspend",
+        "external",
+        "inline",
+        "final",
+        "const",
+        "lateinit",
+    )
+    private val MODIFIED_DEFINITION_PREFIX_PATTERN = Regex(
+        """^(?:(?:${KOTLIN_DECLARATION_MODIFIERS.joinToString("|")})\s+)+(?:class|fun|interface|object)\b"""
+    )
     private const val MAX_CROSS_FILE_DEFINITIONS = 3
     private const val MAX_CROSS_FILE_CHARS = 1_500
     private const val CROSS_FILE_SCAN_LINES = 10
@@ -543,5 +576,7 @@ internal object PsiInlineContextBuilder {
     private const val MAX_SNIPPET_LINES = 8
     private const val MAX_SNIPPET_CHARS = 500
     private val CLASS_BASE_REFERENCE_PATTERN = Regex("""[A-Za-z_][A-Za-z0-9_\.]*$""")
-    private val CLASS_DECLARATION_PATTERN = Regex("""\bclass\s+([A-Za-z_][A-Za-z0-9_]*)""")
+    private val CLASS_DECLARATION_PATTERN = Regex(
+        """\b(?:(?:${KOTLIN_DECLARATION_MODIFIERS.joinToString("|")})\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)"""
+    )
 }

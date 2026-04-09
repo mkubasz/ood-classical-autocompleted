@@ -1,9 +1,9 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineLexicalContext
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineModelContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineLexicalContext
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineModelContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,7 +12,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun preservesSingleLineMemberAccessCompletionForClearHistory() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 class Agent:
                     def clear_history(self) -> None:
@@ -44,7 +44,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun rejectsMalformedInitializerSignatureCompletion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 class Agent:
                     def __init__(
@@ -74,7 +74,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun rejectsMalformedPropertySetterCompletion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 @property
                 def history(self) -> History:
@@ -108,7 +108,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun keepsSingleLinePropertyGetterSignatureContinuation() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 @property
                 def history(self
@@ -138,7 +138,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun repairsExtraClosingDelimiterInClassBaseCompletion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 class Czlowiek:
                     pass
@@ -173,7 +173,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun repairsDuplicateClosingParenBeforeColonInClassBaseCompletion() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 class Czlowiek:
                     pass
@@ -208,7 +208,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun repairsLoggerFunctionDefinitionIntoNewLine() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = """
                 logger.addHandler(handler)
             """.trimIndent(),
@@ -235,7 +235,7 @@ class InlineCandidatePreparationTest {
 
     @Test
     fun rejectsTutorialStylePythonBodyBoilerplateInFreshDefinitionBody() {
-        val request = AutocompleteRequest(
+        val request = ProviderRequest(
             prefix = "def my_new_workflow(message: str):",
             suffix = "",
             filePath = "workflow.py",

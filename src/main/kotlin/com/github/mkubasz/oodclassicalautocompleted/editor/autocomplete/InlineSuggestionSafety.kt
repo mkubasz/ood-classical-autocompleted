@@ -1,11 +1,11 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
-import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.ProviderRequest
+import com.github.mkubasz.oodclassicalautocompleted.completion.domain.InlineCompletionCandidate
 
 internal object InlineSuggestionSafety {
 
-    fun isSafe(candidate: InlineCompletionCandidate, request: AutocompleteRequest): Boolean {
+    fun isSafe(candidate: InlineCompletionCandidate, request: ProviderRequest): Boolean {
         if ('\n' !in candidate.text) return true
 
         if (startsWithSafeBoundaryInsertedNewline(candidate, request)) {
@@ -31,7 +31,7 @@ internal object InlineSuggestionSafety {
 
     private fun startsWithSafeBoundaryInsertedNewline(
         candidate: InlineCompletionCandidate,
-        request: AutocompleteRequest,
+        request: ProviderRequest,
     ): Boolean {
         if (!candidate.text.startsWith('\n')) return false
 
