@@ -24,6 +24,11 @@ internal object PsiInlineContextBuilder {
         val parentChain = generateSequence(contextLeaf) { it.parent }.take(MAX_PARENT_DEPTH).toList()
         val parserDefinition = LanguageParserDefinitions.INSTANCE.forLanguage(contextLeaf.language)
         val lexicalContext = classifyLexicalContext(contextLeaf, parserDefinition)
+        val localScope = LocalScopeContextHeuristics.analyze(
+            documentText = documentText,
+            caretOffset = caretOffset,
+            languageId = psiFile.language.id,
+        )
         val resolvedReference = resolveRelevantReference(psiFile, caretOffset, contextLeaf)
         val currentLinePrefix = documentText.substring(0, caretOffset.coerceIn(0, documentText.length)).substringAfterLast('\n')
         val isClassBaseListLikeContext = isClassBaseListLikeContext(currentLinePrefix)
@@ -55,7 +60,7 @@ internal object PsiInlineContextBuilder {
             documentText = documentText,
             caretOffset = caretOffset,
         )
-        if (crossFileDefinitions.isEmpty() && resolvedReference == null) {
+        if (crossFileDefinitions.isEmpty() && resolvedReference == null && !localScope.isFreshBlockBodyContext) {
             crossFileDefinitions = HeuristicContextFallback.extractDefinitions(documentText, caretOffset)
         }
 
@@ -70,6 +75,9 @@ internal object PsiInlineContextBuilder {
                 .filter(String::isNotBlank)
                 .distinct()
                 .take(MAX_ENCLOSING_KINDS),
+            currentDefinitionName = localScope.currentDefinitionName,
+            currentParameterNames = localScope.currentParameterNames,
+            isFreshBlockBodyContext = localScope.isFreshBlockBodyContext,
             isDecoratorLikeContext = isDecoratorLikeContext(contextLeaf, parentChain),
             isClassBaseListLikeContext = isClassBaseListLikeContext,
             isAfterMemberAccess = currentLinePrefix.trimEnd().endsWith("."),
@@ -410,7 +418,8 @@ internal object PsiInlineContextBuilder {
     private fun looksLikeContainerNameOnly(element: PsiElement): Boolean = isTypeLikeContainer(element)
 
     private fun extractSnippet(element: PsiElement): String {
-        val lines = element.text
+        val lines = safeElementText(element)
+            .orEmpty()
             .replace("\r", "")
             .lineSequence()
             .map(String::trimEnd)
@@ -485,7 +494,9 @@ internal object PsiInlineContextBuilder {
     }
 
     private fun extractSignature(element: PsiElement): String {
-        val text = element.text.replace("\r", "")
+        val text = safeElementText(element)
+            .orEmpty()
+            .replace("\r", "")
         val lines = text.lineSequence()
             .map(String::trimEnd)
             .dropWhile(String::isBlank)
@@ -503,22 +514,10 @@ internal object PsiInlineContextBuilder {
         }
     }
 
-    private fun InlineModelContext.hasUsefulSignal(): Boolean =
-        lexicalContext != InlineLexicalContext.UNKNOWN ||
-            enclosingNames.isNotEmpty() ||
-            enclosingKinds.isNotEmpty() ||
-            isDecoratorLikeContext ||
-            isClassBaseListLikeContext ||
-            isAfterMemberAccess ||
-            !receiverExpression.isNullOrBlank() ||
-            receiverMemberNames.isNotEmpty() ||
-            isInParameterListLikeContext ||
-            isDefinitionHeaderLikeContext ||
-            !classBaseReferencePrefix.isNullOrBlank() ||
-            matchingTypeNames.isNotEmpty() ||
-            !resolvedReferenceName.isNullOrBlank() ||
-            !resolvedSnippet.isNullOrBlank() ||
-            resolvedDefinitions.isNotEmpty()
+    internal fun safeElementText(element: PsiElement): String? = runCatching {
+        if (!element.isValid) return null
+        element.text
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 
     private data class ResolvedReference(
         val name: String?,

@@ -20,7 +20,12 @@ class RejectionCache(
 
     private val rejections = ConcurrentLinkedDeque<RejectionEntry>()
 
-    fun recordRejection(key: SuggestionKey, reason: AutocompleteService.DismissReason) {
+    fun recordRejection(
+        key: SuggestionKey,
+        reason: AutocompleteService.DismissReason,
+        shownAt: Long = 0L,
+        now: Long = System.currentTimeMillis(),
+    ) {
         val minShowTime = when (reason) {
             AutocompleteService.DismissReason.CARET_MOVED -> 750L
             AutocompleteService.DismissReason.FOCUS_LOST -> 500L
@@ -30,8 +35,10 @@ class RejectionCache(
             AutocompleteService.DismissReason.ALTERNATIVE_REQUESTED -> 0L
         }
 
-        // Only cache if the suggestion was shown long enough
-        rejections.addFirst(RejectionEntry(key, System.currentTimeMillis(), reason))
+        val visibleDurationMs = if (shownAt > 0L) now - shownAt else 0L
+        if (visibleDurationMs < minShowTime) return
+
+        rejections.addFirst(RejectionEntry(key, now, reason))
 
         // Evict old entries
         while (rejections.size > maxSize) {

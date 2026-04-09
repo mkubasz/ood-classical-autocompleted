@@ -116,6 +116,31 @@ class InceptionLabsRequestBodyBuilderTest : BasePlatformTestCase() {
         assertTrue(prompt.endsWith("client."))
     }
 
+    fun testBuildFimBodyIncludesRetrievedWorkspaceContext() {
+        val body = InceptionLabsRequestBodyBuilder.buildFimBody(
+            model = "mercury-edit-2",
+            request = AutocompleteRequest(
+                prefix = "calculate_",
+                suffix = "",
+                filePath = "workflow.py",
+                language = "python",
+                retrievedChunks = listOf(
+                    RetrievedContextChunk(
+                        filePath = "/repo/services/math_helpers.py",
+                        content = "def calculate_average(numbers):\n    return sum(numbers) / len(numbers)",
+                        score = 3.5,
+                    )
+                ),
+            ),
+            options = InceptionLabsGenerationOptions(),
+        )
+
+        val prompt = body["prompt"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(prompt.contains("# Workspace retrieval context:"))
+        assertTrue(prompt.contains("# retrieved_chunk: math_helpers.py score=3.50"))
+        assertTrue(prompt.contains("# def calculate_average(numbers):"))
+    }
+
     fun testBuildFimBodyAddsSingleLineStopForMemberAccess() {
         val body = InceptionLabsRequestBodyBuilder.buildFimBody(
             model = "mercury-edit-2",
@@ -229,5 +254,24 @@ class InceptionLabsRequestBodyBuilderTest : BasePlatformTestCase() {
         assertEquals("user", firstMessage["role"]?.jsonPrimitive?.content)
         assertEquals("<|current_file_content|>...", firstMessage["content"]?.jsonPrimitive?.content)
         assertEquals("medium", body["reasoning_effort"]?.jsonPrimitive?.content)
+    }
+
+    fun testBuildFimBodyHonorsCustomContextBudget() {
+        val body = InceptionLabsRequestBodyBuilder.buildFimBody(
+            model = "mercury-edit-2",
+            request = AutocompleteRequest(
+                prefix = "a".repeat(5_000),
+                suffix = "b".repeat(5_000),
+                filePath = "Main.kt",
+                language = "kt",
+            ),
+            options = InceptionLabsGenerationOptions(),
+            contextBudget = ContextBudgetPacker.inceptionFimBudget(2_000),
+        )
+
+        val promptLength = body["prompt"]?.jsonPrimitive?.content?.length ?: 0
+        val suffixLength = body["suffix"]?.jsonPrimitive?.content?.length ?: 0
+        assertTrue(promptLength <= 2_000)
+        assertTrue(suffixLength <= 1_000)
     }
 }

@@ -21,14 +21,19 @@ data class AutocompleteRequest(
     val language: String?,
     val cursorOffset: Int? = null,
     val inlineContext: InlineModelContext? = null,
+    val retrievedChunks: List<RetrievedContextChunk>? = null,
     val recentlyViewedSnippets: List<CodeSnippet>? = null,
     val editDiffHistory: List<String>? = null,
+    val gitDiff: String? = null,
 )
 
 data class InlineModelContext(
     val lexicalContext: InlineLexicalContext = InlineLexicalContext.UNKNOWN,
     val enclosingNames: List<String> = emptyList(),
     val enclosingKinds: List<String> = emptyList(),
+    val currentDefinitionName: String? = null,
+    val currentParameterNames: List<String> = emptyList(),
+    val isFreshBlockBodyContext: Boolean = false,
     val isDecoratorLikeContext: Boolean = false,
     val headerValidationRetry: Boolean = false,
     val isClassBaseListLikeContext: Boolean = false,
@@ -54,11 +59,6 @@ enum class InlineLexicalContext {
     UNKNOWN,
 }
 
-data class CodeSnippet(
-    val filePath: String,
-    val content: String,
-)
-
 data class CompletionResponse(
     val inlineCandidates: List<InlineCompletionCandidate> = emptyList(),
     val nextEditCandidates: List<NextEditCompletionCandidate> = emptyList(),
@@ -69,12 +69,6 @@ data class InlineCompletionCandidate(
     val insertionOffset: Int,
     val isExactInsertion: Boolean = false,
     val confidenceScore: Double? = null,
-)
-
-data class ResolvedDefinition(
-    val name: String,
-    val filePath: String?,
-    val signature: String,
 )
 
 data class NextEditCompletionCandidate(

@@ -232,4 +232,37 @@ class InlineCandidatePreparationTest {
             prepared.map { it.text },
         )
     }
+
+    @Test
+    fun rejectsTutorialStylePythonBodyBoilerplateInFreshDefinitionBody() {
+        val request = AutocompleteRequest(
+            prefix = "def my_new_workflow(message: str):",
+            suffix = "",
+            filePath = "workflow.py",
+            language = "Python",
+            inlineContext = InlineModelContext(
+                lexicalContext = InlineLexicalContext.CODE,
+                currentDefinitionName = "my_new_workflow",
+                currentParameterNames = listOf("message"),
+                isFreshBlockBodyContext = true,
+            ),
+        )
+
+        val prepared = InlineCandidatePreparation.prepare(
+            rawCandidates = listOf(
+                InlineCompletionCandidate(
+                    text = """
+                        
+                            # Example usage of the calculate_average function
+                            numbers = [10, 20, 30]
+                            avg = calculate_average(numbers)
+                    """.trimIndent(),
+                    insertionOffset = request.prefix.length,
+                )
+            ),
+            request = request,
+        )
+
+        assertTrue(prepared.isEmpty())
+    }
 }

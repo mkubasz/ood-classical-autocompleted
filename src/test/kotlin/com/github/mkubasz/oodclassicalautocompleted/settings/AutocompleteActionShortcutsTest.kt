@@ -5,6 +5,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.awt.event.KeyEvent
 
 class AutocompleteActionShortcutsTest : BasePlatformTestCase() {
+    // Uses PluginSettings.State defaults in plain test code.
 
     fun testTabAcceptShortcutSetContainsOnlyTab() {
         val shortcuts = AutocompleteActionShortcuts.tabAcceptShortcutSet()

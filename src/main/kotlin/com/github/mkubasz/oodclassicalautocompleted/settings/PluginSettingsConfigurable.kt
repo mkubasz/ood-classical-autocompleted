@@ -27,7 +27,8 @@ class PluginSettingsConfigurable : Configurable {
     private var modelField: JBTextField? = null
 
     private var autocompleteCheckbox: JBCheckBox? = null
-    private var providerCombo: ComboBox<AutocompleteProviderType>? = null
+    private var inlineProviderCombo: ComboBox<AutocompleteProviderType>? = null
+    private var nextEditProviderCombo: ComboBox<AutocompleteProviderType>? = null
     private var debounceField: JBTextField? = null
     private var dwellField: JBTextField? = null
     private var acceptOnRightArrowCheckbox: JBCheckBox? = null
@@ -42,6 +43,13 @@ class PluginSettingsConfigurable : Configurable {
     private var debugMetricsLoggingCheckbox: JBCheckBox? = null
     private var terminalCompletionCheckbox: JBCheckBox? = null
     private var terminalProviderCombo: ComboBox<AutocompleteProviderType>? = null
+    private var gitDiffContextCheckbox: JBCheckBox? = null
+    private var correctnessFilterCheckbox: JBCheckBox? = null
+    private var minConfidenceScoreField: JBTextField? = null
+    private var contextBudgetCharsField: JBTextField? = null
+    private var lspContextFallbackCheckbox: JBCheckBox? = null
+    private var localRetrievalCheckbox: JBCheckBox? = null
+    private var retrievalMaxChunksField: JBTextField? = null
 
     private var inceptionLabsApiKeyField: JBPasswordField? = null
     private var inceptionLabsBaseUrlField: JBTextField? = null
@@ -71,14 +79,18 @@ class PluginSettingsConfigurable : Configurable {
 
     override fun createComponent(): JComponent {
         val state = PluginSettings.getInstance().state
+        val credentials = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
 
-        apiKeyField = JBPasswordField().apply { text = state.apiKey; columns = 40 }
+        apiKeyField = JBPasswordField().apply { text = credentials.getApiKey(AutocompleteProviderType.ANTHROPIC).orEmpty(); columns = 40 }
         baseUrlField = JBTextField(state.baseUrl, 40)
         modelField = JBTextField(state.model, 40)
 
         autocompleteCheckbox = JBCheckBox("Enable autocomplete", state.autocompleteEnabled)
-        providerCombo = ComboBox(DefaultComboBoxModel(AutocompleteProviderType.entries.toTypedArray())).apply {
-            selectedItem = state.autocompleteProvider
+        inlineProviderCombo = ComboBox(DefaultComboBoxModel(AutocompleteProviderType.entries.toTypedArray())).apply {
+            selectedItem = state.resolvedInlineProvider()
+        }
+        nextEditProviderCombo = ComboBox(DefaultComboBoxModel(AutocompleteProviderType.entries.toTypedArray())).apply {
+            selectedItem = state.resolvedNextEditProvider()
         }
         debounceField = JBTextField(state.debounceMs.toString(), 10)
         dwellField = JBTextField(state.tabAcceptMinDwellMs.toString(), 10)
@@ -99,8 +111,24 @@ class PluginSettingsConfigurable : Configurable {
         terminalProviderCombo = ComboBox(DefaultComboBoxModel(AutocompleteProviderType.entries.toTypedArray())).apply {
             selectedItem = state.terminalProvider
         }
+        gitDiffContextCheckbox = JBCheckBox("Include git diff context in Next Edit requests", state.gitDiffContextEnabled)
+        correctnessFilterCheckbox = JBCheckBox("Enable correctness filter", state.correctnessFilterEnabled)
+        minConfidenceScoreField = numericField(state.minConfidenceScore)
+        contextBudgetCharsField = numericField(state.contextBudgetChars)
+        lspContextFallbackCheckbox = JBCheckBox(
+            "Enable LSP semantic context fallback",
+            state.lspContextFallbackEnabled,
+        )
+        localRetrievalCheckbox = JBCheckBox(
+            "Enable local workspace retrieval",
+            state.localRetrievalEnabled,
+        )
+        retrievalMaxChunksField = numericField(state.retrievalMaxChunks)
 
-        inceptionLabsApiKeyField = JBPasswordField().apply { text = state.inceptionLabsApiKey; columns = 40 }
+        inceptionLabsApiKeyField = JBPasswordField().apply {
+            text = credentials.getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty()
+            columns = 40
+        }
         inceptionLabsBaseUrlField = JBTextField(state.inceptionLabsBaseUrl, 40)
         inceptionLabsModelField = JBTextField(state.inceptionLabsModel, 40)
 
@@ -133,12 +161,14 @@ class PluginSettingsConfigurable : Configurable {
 
     private fun buildGeneralTab(): JComponent = panel {
         group("Provider") {
-            row {
-                cell(autocompleteCheckbox!!)
+            row { cell(autocompleteCheckbox!!) }
+            row("Inline provider:") {
+                cell(inlineProviderCombo!!)
+                    .comment("Primary provider for inline code completion")
             }
-            row("Provider:") {
-                cell(providerCombo!!)
-                    .comment("Choose your autocomplete provider")
+            row("Next Edit provider:") {
+                cell(nextEditProviderCombo!!)
+                    .comment("Currently only Inception Labs supports Next Edit previews")
             }
         }
         group("Behavior") {
@@ -158,6 +188,10 @@ class PluginSettingsConfigurable : Configurable {
             }
             row("Next Edit preview max lines:") {
                 cell(nextEditPreviewMaxLinesField!!)
+            }
+            row {
+                cell(gitDiffContextCheckbox!!)
+                    .comment("Opt-in VCS grounding for Next Edit requests")
             }
         }
         group("Cache") {
@@ -195,6 +229,30 @@ class PluginSettingsConfigurable : Configurable {
             }
             row {
                 cell(debugMetricsLoggingCheckbox!!)
+            }
+            row {
+                cell(correctnessFilterCheckbox!!)
+                    .comment("Run temporary PSI validation on prepared inline candidates")
+            }
+            row("Min confidence score:") {
+                cell(minConfidenceScoreField!!)
+                    .comment("Range: 0.0 to 1.0. Use 0.0 to disable score-based filtering.")
+            }
+            row("Context budget (chars):") {
+                cell(contextBudgetCharsField!!)
+                    .comment("Shared prompt budget for inline providers")
+            }
+            row {
+                cell(lspContextFallbackCheckbox!!)
+                    .comment("Try PSI first, then LSP-backed context when available for weak PSI languages")
+            }
+            row {
+                cell(localRetrievalCheckbox!!)
+                    .comment("Retrieve related project snippets from other workspace files for additional grounding")
+            }
+            row("Retrieval max chunks:") {
+                cell(retrievalMaxChunksField!!)
+                    .comment("Number of retrieved snippets to include when retrieval is enabled")
             }
         }
     }
@@ -310,11 +368,13 @@ class PluginSettingsConfigurable : Configurable {
 
     override fun isModified(): Boolean {
         val state = PluginSettings.getInstance().state
-        return String(apiKeyField?.password ?: charArrayOf()) != state.apiKey ||
+        val credentials = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
+        return String(apiKeyField?.password ?: charArrayOf()) != credentials.getApiKey(AutocompleteProviderType.ANTHROPIC).orEmpty() ||
             baseUrlField?.text != state.baseUrl ||
             modelField?.text != state.model ||
             autocompleteCheckbox?.isSelected != state.autocompleteEnabled ||
-            providerCombo?.selectedItem != state.autocompleteProvider ||
+            inlineProviderCombo?.selectedItem != state.resolvedInlineProvider() ||
+            nextEditProviderCombo?.selectedItem != state.resolvedNextEditProvider() ||
             debounceField?.text != state.debounceMs.toString() ||
             dwellField?.text != state.tabAcceptMinDwellMs.toString() ||
             acceptOnRightArrowCheckbox?.isSelected != state.acceptOnRightArrow ||
@@ -329,7 +389,14 @@ class PluginSettingsConfigurable : Configurable {
             debugMetricsLoggingCheckbox?.isSelected != state.debugMetricsLogging ||
             terminalCompletionCheckbox?.isSelected != state.terminalCompletionEnabled ||
             terminalProviderCombo?.selectedItem != state.terminalProvider ||
-            String(inceptionLabsApiKeyField?.password ?: charArrayOf()) != state.inceptionLabsApiKey ||
+            gitDiffContextCheckbox?.isSelected != state.gitDiffContextEnabled ||
+            correctnessFilterCheckbox?.isSelected != state.correctnessFilterEnabled ||
+            minConfidenceScoreField?.text != state.minConfidenceScore.toFieldValue() ||
+            contextBudgetCharsField?.text != state.contextBudgetChars.toString() ||
+            lspContextFallbackCheckbox?.isSelected != state.lspContextFallbackEnabled ||
+            localRetrievalCheckbox?.isSelected != state.localRetrievalEnabled ||
+            retrievalMaxChunksField?.text != state.retrievalMaxChunks.toString() ||
+            String(inceptionLabsApiKeyField?.password ?: charArrayOf()) != credentials.getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty() ||
             inceptionLabsBaseUrlField?.text != state.inceptionLabsBaseUrl ||
             inceptionLabsModelField?.text != state.inceptionLabsModel ||
             inceptionLabsFimMaxTokensField?.text != state.inceptionLabsFimMaxTokens.toFieldValue() ||
@@ -351,6 +418,7 @@ class PluginSettingsConfigurable : Configurable {
     }
 
     override fun apply() {
+        val credentials = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
         val normalizedNextShortcut = normalizeShortcut(
             rawValue = cycleNextShortcutField?.text ?: "",
             fieldName = "Next alternative shortcut",
@@ -361,12 +429,15 @@ class PluginSettingsConfigurable : Configurable {
         )
 
         val newState = PluginSettings.State(
-            apiKey = String(apiKeyField?.password ?: charArrayOf()),
             baseUrl = baseUrlField?.text ?: PluginSettings.DEFAULT_API_URL,
             model = modelField?.text ?: PluginSettings.DEFAULT_MODEL,
             autocompleteEnabled = autocompleteCheckbox?.isSelected ?: true,
-            autocompleteProvider = providerCombo?.selectedItem as? AutocompleteProviderType
+            autocompleteProvider = inlineProviderCombo?.selectedItem as? AutocompleteProviderType
                 ?: AutocompleteProviderType.ANTHROPIC,
+            inlineProvider = inlineProviderCombo?.selectedItem as? AutocompleteProviderType
+                ?: AutocompleteProviderType.ANTHROPIC,
+            nextEditProvider = nextEditProviderCombo?.selectedItem as? AutocompleteProviderType
+                ?: PluginSettings.DEFAULT_NEXT_EDIT_PROVIDER,
             debounceMs = debounceField?.text?.toLongOrNull() ?: 300L,
             tabAcceptMinDwellMs = parseRequiredLong(
                 dwellField?.text,
@@ -394,7 +465,24 @@ class PluginSettingsConfigurable : Configurable {
             terminalCompletionEnabled = terminalCompletionCheckbox?.isSelected ?: false,
             terminalProvider = terminalProviderCombo?.selectedItem as? AutocompleteProviderType
                 ?: AutocompleteProviderType.ANTHROPIC,
-            inceptionLabsApiKey = String(inceptionLabsApiKeyField?.password ?: charArrayOf()),
+            gitDiffContextEnabled = gitDiffContextCheckbox?.isSelected ?: false,
+            correctnessFilterEnabled = correctnessFilterCheckbox?.isSelected ?: false,
+            minConfidenceScore = parseRequiredDouble(
+                minConfidenceScoreField?.text,
+                "Min confidence score",
+                min = 0.0,
+                max = 1.0,
+            ),
+            contextBudgetChars = parseRequiredInt(
+                contextBudgetCharsField?.text,
+                "Context budget",
+            ),
+            lspContextFallbackEnabled = lspContextFallbackCheckbox?.isSelected ?: false,
+            localRetrievalEnabled = localRetrievalCheckbox?.isSelected ?: false,
+            retrievalMaxChunks = parseRequiredInt(
+                retrievalMaxChunksField?.text,
+                "Retrieval max chunks",
+            ),
             inceptionLabsBaseUrl = inceptionLabsBaseUrlField?.text ?: "",
             inceptionLabsModel = inceptionLabsModelField?.text ?: "",
             inceptionLabsFimMaxTokens = parseOptionalInt(
@@ -445,6 +533,13 @@ class PluginSettingsConfigurable : Configurable {
             inceptionLabsNextEditReasoningEffort = inceptionLabsNextEditReasoningEffortField?.text?.trim() ?: "low",
         )
 
+        if (newState.contextBudgetChars < 1_200) {
+            throw ConfigurationException("Context budget must be at least 1200.")
+        }
+        if (newState.retrievalMaxChunks !in 1..8) {
+            throw ConfigurationException("Retrieval max chunks must be between 1 and 8.")
+        }
+
         try {
             InceptionLabsAdvancedSettings.validateState(newState)
         } catch (e: IllegalArgumentException) {
@@ -454,6 +549,14 @@ class PluginSettingsConfigurable : Configurable {
         cycleNextShortcutField?.text = normalizedNextShortcut
         cyclePreviousShortcutField?.text = normalizedPreviousShortcut
 
+        credentials.setApiKey(
+            AutocompleteProviderType.ANTHROPIC,
+            String(apiKeyField?.password ?: charArrayOf()),
+        )
+        credentials.setApiKey(
+            AutocompleteProviderType.INCEPTION_LABS,
+            String(inceptionLabsApiKeyField?.password ?: charArrayOf()),
+        )
         PluginSettings.getInstance().loadState(newState)
         ApplicationManager.getApplication()
             .getService(AutocompleteShortcutManager::class.java)
@@ -462,11 +565,13 @@ class PluginSettingsConfigurable : Configurable {
 
     override fun reset() {
         val state = PluginSettings.getInstance().state
-        apiKeyField?.text = state.apiKey
+        val credentials = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
+        apiKeyField?.text = credentials.getApiKey(AutocompleteProviderType.ANTHROPIC).orEmpty()
         baseUrlField?.text = state.baseUrl
         modelField?.text = state.model
         autocompleteCheckbox?.isSelected = state.autocompleteEnabled
-        providerCombo?.selectedItem = state.autocompleteProvider
+        inlineProviderCombo?.selectedItem = state.resolvedInlineProvider()
+        nextEditProviderCombo?.selectedItem = state.resolvedNextEditProvider()
         debounceField?.text = state.debounceMs.toString()
         dwellField?.text = state.tabAcceptMinDwellMs.toString()
         acceptOnRightArrowCheckbox?.isSelected = state.acceptOnRightArrow
@@ -481,8 +586,15 @@ class PluginSettingsConfigurable : Configurable {
         debugMetricsLoggingCheckbox?.isSelected = state.debugMetricsLogging
         terminalCompletionCheckbox?.isSelected = state.terminalCompletionEnabled
         terminalProviderCombo?.selectedItem = state.terminalProvider
+        gitDiffContextCheckbox?.isSelected = state.gitDiffContextEnabled
+        correctnessFilterCheckbox?.isSelected = state.correctnessFilterEnabled
+        minConfidenceScoreField?.text = state.minConfidenceScore.toFieldValue()
+        contextBudgetCharsField?.text = state.contextBudgetChars.toString()
+        lspContextFallbackCheckbox?.isSelected = state.lspContextFallbackEnabled
+        localRetrievalCheckbox?.isSelected = state.localRetrievalEnabled
+        retrievalMaxChunksField?.text = state.retrievalMaxChunks.toString()
 
-        inceptionLabsApiKeyField?.text = state.inceptionLabsApiKey
+        inceptionLabsApiKeyField?.text = credentials.getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty()
         inceptionLabsBaseUrlField?.text = state.inceptionLabsBaseUrl
         inceptionLabsModelField?.text = state.inceptionLabsModel
 
@@ -543,6 +655,19 @@ class PluginSettingsConfigurable : Configurable {
         if (normalized.isEmpty()) return null
         return normalized.toDoubleOrNull()
             ?: throw ConfigurationException("$fieldName must be a number.")
+    }
+
+    private fun parseRequiredDouble(rawValue: String?, fieldName: String, min: Double, max: Double): Double {
+        val normalized = rawValue?.trim().orEmpty()
+        if (normalized.isEmpty()) {
+            throw ConfigurationException("$fieldName is required.")
+        }
+        val value = normalized.toDoubleOrNull()
+            ?: throw ConfigurationException("$fieldName must be a number.")
+        if (value !in min..max) {
+            throw ConfigurationException("$fieldName must be between $min and $max.")
+        }
+        return value
     }
 
     private fun numericField(value: Number?): JBTextField =

@@ -21,6 +21,9 @@ private fun Provider<String>.splitCsv(): Provider<List<String>> = map { rawValue
         .filter(String::isNotEmpty)
 }
 
+private fun Project.propertyOrNull(name: String): String? =
+    findProperty(name)?.toString()?.takeIf(String::isNotBlank)
+
 private fun firstExistingPath(vararg candidates: String?): String? = candidates
     .filterNotNull()
     .map(::File)
@@ -29,6 +32,8 @@ private fun firstExistingPath(vararg candidates: String?): String? = candidates
 
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
+
+val evaluationRuntime by configurations.creating
 
 val localPythonTestPluginPath = firstExistingPath(
     System.getenv("PYCHARM_PYTHON_PLUGIN_PATH"),
@@ -78,6 +83,7 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
     implementation(libs.kotlinx.serialization.json)
+    evaluationRuntime(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
@@ -193,6 +199,43 @@ tasks {
 
     publishPlugin {
         dependsOn(patchChangelog)
+    }
+
+    register<JavaExec>("runOfflineInlineEvaluation") {
+        group = "verification"
+        description = "Runs the offline inline evaluation harness."
+        classpath = sourceSets.main.get().runtimeClasspath + evaluationRuntime
+        mainClass.set("com.github.mkubasz.oodclassicalautocompleted.evaluation.OfflineInlineEvaluationCliKt")
+
+        val taskArgs = mutableListOf<String>()
+        project.propertyOrNull("cases")?.let {
+            taskArgs += listOf("--cases", it)
+        }
+        project.propertyOrNull("evaluationProvider")?.let {
+            taskArgs += listOf("--provider", it)
+        }
+        project.propertyOrNull("predictions")?.let {
+            taskArgs += listOf("--predictions", it)
+        }
+        project.propertyOrNull("evaluationOutput")?.let {
+            taskArgs += listOf("--output", it)
+        }
+        project.propertyOrNull("evaluationApiKey")?.let {
+            taskArgs += listOf("--api-key", it)
+        }
+        project.propertyOrNull("evaluationBaseUrl")?.let {
+            taskArgs += listOf("--base-url", it)
+        }
+        project.propertyOrNull("evaluationModel")?.let {
+            taskArgs += listOf("--model", it)
+        }
+        project.propertyOrNull("evaluationContextBudgetChars")?.let {
+            taskArgs += listOf("--context-budget-chars", it)
+        }
+        project.propertyOrNull("evaluationMinConfidenceScore")?.let {
+            taskArgs += listOf("--min-confidence-score", it)
+        }
+        args(taskArgs)
     }
 }
 

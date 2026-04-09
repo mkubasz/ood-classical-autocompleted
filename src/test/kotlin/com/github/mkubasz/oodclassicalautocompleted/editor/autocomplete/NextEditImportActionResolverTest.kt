@@ -8,6 +8,7 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class NextEditImportActionResolverTest : BasePlatformTestCase() {
+    // Uses PluginSettings.State.copy() and needs to stay in sync with settings defaults.
 
     fun testAppliesJavaImportQuickFixForInsertedTypeReference() {
         myFixture.configureByText(

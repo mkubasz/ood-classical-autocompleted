@@ -4,6 +4,7 @@ import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.Incept
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class InceptionLabsAdvancedSettingsTest : BasePlatformTestCase() {
+    // Uses PluginSettings.State defaults in plain test code.
 
     fun testBuildsFimOptionsFromValidatedState() {
         val state = PluginSettings.State().apply {

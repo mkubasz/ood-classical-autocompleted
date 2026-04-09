@@ -14,6 +14,7 @@ internal data class CompletionContextSnapshot(
     val prefixWindow: String,
     val suffixWindow: String,
     val inlineContext: InlineModelContext? = null,
+    val inlineContextSource: InlineContextSource? = null,
     val project: Project? = null,
     val isTerminal: Boolean = false,
 )

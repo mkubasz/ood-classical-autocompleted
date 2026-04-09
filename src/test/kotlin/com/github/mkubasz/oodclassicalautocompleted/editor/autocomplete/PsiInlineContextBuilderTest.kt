@@ -1,8 +1,27 @@
 package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 
+import com.intellij.psi.PsiElement
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.lang.reflect.Proxy
 
 class PsiInlineContextBuilderTest : BasePlatformTestCase() {
+
+    fun testSafeElementTextHandlesPsiElementsWithNullText() {
+        val element = Proxy.newProxyInstance(
+            PsiElement::class.java.classLoader,
+            arrayOf(PsiElement::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "isValid" -> true
+                "getText" -> null
+                else -> throw UnsupportedOperationException("Unexpected call: ${method.name}")
+            }
+        } as PsiElement
+
+        val text = PsiInlineContextBuilder.safeElementText(element)
+
+        assertNull(text)
+    }
 
     fun testBuildCapturesThisReceiverMembersInJava() {
         myFixture.configureByText(

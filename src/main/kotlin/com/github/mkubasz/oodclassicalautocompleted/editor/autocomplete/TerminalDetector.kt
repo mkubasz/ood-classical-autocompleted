@@ -18,9 +18,9 @@ internal object TerminalDetector {
             if (fileTypeName.contains("Terminal", ignoreCase = true)) return true
         }
 
-        val componentHierarchy = generateSequence(editor.contentComponent.parent) { it?.parent }
+        val componentHierarchy = generateSequence(editor.contentComponent.parent) { it.parent }
             .take(MAX_HIERARCHY_DEPTH)
-        if (componentHierarchy.any { it?.javaClass?.name?.contains("Terminal", ignoreCase = true) == true }) {
+        if (componentHierarchy.any { it.javaClass.name.contains("Terminal", ignoreCase = true) }) {
             return true
         }
 

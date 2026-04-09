@@ -1,8 +1,21 @@
 package com.github.mkubasz.oodclassicalautocompleted.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class PluginSettingsTest : BasePlatformTestCase() {
+
+    private val credentials: ProviderCredentialsService
+        get() = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
+
+    override fun tearDown() {
+        try {
+            credentials.setApiKey(AutocompleteProviderType.ANTHROPIC, null)
+            credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, null)
+        } finally {
+            super.tearDown()
+        }
+    }
 
     fun testProviderTypeEnumValues() {
         val types = AutocompleteProviderType.entries
@@ -11,9 +24,10 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertTrue(AutocompleteProviderType.INCEPTION_LABS in types)
     }
 
-    fun testDefaultsToAnthropic() {
+    fun testDefaultsToAnthropicInlineAndInceptionNextEdit() {
         val state = PluginSettings.State()
-        assertEquals(AutocompleteProviderType.ANTHROPIC, state.autocompleteProvider)
+        assertEquals(AutocompleteProviderType.ANTHROPIC, state.resolvedInlineProvider())
+        assertEquals(PluginSettings.DEFAULT_NEXT_EDIT_PROVIDER, state.resolvedNextEditProvider())
         assertTrue(state.autocompleteEnabled)
         assertEquals(300L, state.debounceMs)
         assertEquals(150L, state.tabAcceptMinDwellMs)
@@ -27,6 +41,13 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertEquals(15_000L, state.suggestionCacheTtlMs)
         assertEquals(32, state.suggestionCacheMaxEntries)
         assertFalse(state.debugMetricsLogging)
+        assertFalse(state.gitDiffContextEnabled)
+        assertFalse(state.correctnessFilterEnabled)
+        assertEquals(0.0, state.minConfidenceScore)
+        assertEquals(4_000, state.contextBudgetChars)
+        assertFalse(state.lspContextFallbackEnabled)
+        assertFalse(state.localRetrievalEnabled)
+        assertEquals(3, state.retrievalMaxChunks)
     }
 
     fun testInceptionLabsFieldsDefaultBlank() {
@@ -57,59 +78,117 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertEquals(PluginSettings.DEFAULT_MODEL, state.model)
     }
 
-    fun testIsConfiguredAnthropicWithApiKey() {
+    fun testIsConfiguredWhenInlineProviderHasCredentials() {
         val settings = PluginSettings.getInstance()
-        settings.loadState(PluginSettings.State().apply {
-            apiKey = "sk-key"
-            autocompleteProvider = AutocompleteProviderType.ANTHROPIC
-        })
+        settings.loadState(
+            PluginSettings.State(
+                inlineProvider = AutocompleteProviderType.ANTHROPIC,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            )
+        )
+
+        credentials.setApiKey(AutocompleteProviderType.ANTHROPIC, "sk-key")
+
         assertTrue(settings.isConfigured)
+        assertTrue(settings.hasInlineCapabilityConfigured())
+        assertEquals(AutocompleteProviderType.ANTHROPIC, settings.activeInlineProvider())
     }
 
-    fun testIsConfiguredAnthropicWithoutApiKeyIsFalse() {
+    fun testFallsBackToNextEditProviderForInlineCapability() {
         val settings = PluginSettings.getInstance()
-        settings.loadState(PluginSettings.State().apply {
-            apiKey = ""
-            autocompleteProvider = AutocompleteProviderType.ANTHROPIC
-        })
-        assertFalse(settings.isConfigured)
-    }
+        settings.loadState(
+            PluginSettings.State(
+                inlineProvider = AutocompleteProviderType.ANTHROPIC,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            )
+        )
 
-    fun testIsConfiguredInceptionLabsWithKey() {
-        val settings = PluginSettings.getInstance()
-        settings.loadState(PluginSettings.State().apply {
-            inceptionLabsApiKey = "il-key"
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        })
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+
         assertTrue(settings.isConfigured)
+        assertTrue(settings.hasInlineCapabilityConfigured())
+        assertTrue(settings.isNextEditConfigured())
+        assertEquals(AutocompleteProviderType.INCEPTION_LABS, settings.activeInlineProvider())
     }
 
-    fun testIsConfiguredInceptionLabsNoKey() {
+    fun testDoesNotFallBackToNextEditProviderWhenNextEditDisabled() {
         val settings = PluginSettings.getInstance()
-        settings.loadState(PluginSettings.State().apply {
-            inceptionLabsApiKey = ""
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        })
+        settings.loadState(
+            PluginSettings.State(
+                inlineProvider = AutocompleteProviderType.ANTHROPIC,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+                nextEditEnabled = false,
+            )
+        )
+
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+
         assertFalse(settings.isConfigured)
+        assertFalse(settings.hasInlineCapabilityConfigured())
+        assertFalse(settings.isNextEditConfigured())
+        assertNull(settings.activeInlineProvider())
+    }
+
+    fun testIsConfiguredFalseWhenNoCredentialsExist() {
+        val settings = PluginSettings.getInstance()
+        settings.loadState(
+            PluginSettings.State(
+                inlineProvider = AutocompleteProviderType.ANTHROPIC,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            )
+        )
+
+        assertFalse(settings.isConfigured)
+        assertFalse(settings.hasInlineCapabilityConfigured())
+        assertFalse(settings.isNextEditConfigured())
+        assertNull(settings.activeInlineProvider())
+    }
+
+    fun testLoadStateMigratesLegacySecretsOutOfPersistentState() {
+        val settings = PluginSettings.getInstance()
+        settings.loadState(
+            PluginSettings.State(
+                apiKey = "sk-key",
+                inceptionLabsApiKey = "il-key",
+                inlineProvider = AutocompleteProviderType.ANTHROPIC,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            )
+        )
+
+        assertEquals("sk-key", credentials.getApiKey(AutocompleteProviderType.ANTHROPIC))
+        assertEquals("il-key", credentials.getApiKey(AutocompleteProviderType.INCEPTION_LABS))
+        assertEquals("", settings.state.apiKey)
+        assertEquals("", settings.state.inceptionLabsApiKey)
     }
 
     fun testPersistsAdvancedInceptionLabsFields() {
         val settings = PluginSettings.getInstance()
-        settings.loadState(PluginSettings.State().apply {
-            inceptionLabsApiKey = "il-key"
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-            inceptionLabsFimMaxTokens = 256
-            inceptionLabsFimPresencePenalty = 1.25
-            inceptionLabsFimStopSequences = "\n\nstop-a\nstop-b"
-            inceptionLabsFimExtraBodyJson = """{"reasoning_effort":"low"}"""
-            inceptionLabsNextEditTemperature = 0.4
-            inceptionLabsNextEditTopP = 0.9
-            inceptionLabsNextEditExtraBodyJson = """{"reasoning_effort":"medium"}"""
-            inceptionLabsNextEditLinesAboveCursor = 7
-            inceptionLabsNextEditLinesBelowCursor = 12
-        })
+        settings.loadState(
+            PluginSettings.State(
+                inlineProvider = AutocompleteProviderType.INCEPTION_LABS,
+                nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+                inceptionLabsFimMaxTokens = 256,
+                inceptionLabsFimPresencePenalty = 1.25,
+                inceptionLabsFimStopSequences = "\n\nstop-a\nstop-b",
+                inceptionLabsFimExtraBodyJson = """{"reasoning_effort":"low"}""",
+                inceptionLabsNextEditTemperature = 0.4,
+                inceptionLabsNextEditTopP = 0.9,
+                inceptionLabsNextEditExtraBodyJson = """{"reasoning_effort":"medium"}""",
+                inceptionLabsNextEditLinesAboveCursor = 7,
+                inceptionLabsNextEditLinesBelowCursor = 12,
+                gitDiffContextEnabled = true,
+                correctnessFilterEnabled = true,
+                minConfidenceScore = 0.42,
+                contextBudgetChars = 2_600,
+                lspContextFallbackEnabled = true,
+                localRetrievalEnabled = true,
+                retrievalMaxChunks = 4,
+            )
+        )
 
         val state = settings.state
+        assertEquals(AutocompleteProviderType.INCEPTION_LABS, state.resolvedInlineProvider())
+        assertEquals(AutocompleteProviderType.INCEPTION_LABS, state.resolvedNextEditProvider())
         assertEquals(256, state.inceptionLabsFimMaxTokens)
         assertEquals(1.25, state.inceptionLabsFimPresencePenalty)
         assertEquals("\n\nstop-a\nstop-b", state.inceptionLabsFimStopSequences)
@@ -119,5 +198,12 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertEquals("""{"reasoning_effort":"medium"}""", state.inceptionLabsNextEditExtraBodyJson)
         assertEquals(7, state.inceptionLabsNextEditLinesAboveCursor)
         assertEquals(12, state.inceptionLabsNextEditLinesBelowCursor)
+        assertTrue(state.gitDiffContextEnabled)
+        assertTrue(state.correctnessFilterEnabled)
+        assertEquals(0.42, state.minConfidenceScore)
+        assertEquals(2_600, state.contextBudgetChars)
+        assertTrue(state.lspContextFallbackEnabled)
+        assertTrue(state.localRetrievalEnabled)
+        assertEquals(4, state.retrievalMaxChunks)
     }
 }

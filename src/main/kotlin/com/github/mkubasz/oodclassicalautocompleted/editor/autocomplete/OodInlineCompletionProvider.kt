@@ -18,16 +18,16 @@ class OodInlineCompletionProvider : InlineCompletionProvider {
 
     override fun isEnabled(event: InlineCompletionEvent): Boolean {
         val settings = PluginSettings.getInstance()
-        if (!settings.state.autocompleteEnabled || !settings.isConfigured) return false
+        if (!settings.state.autocompleteEnabled) return false
 
         val request = event.toRequest() ?: return false
         val editor = request.editor
         if (editor.isViewer || editor.selectionModel.hasSelection()) return false
 
         if (TerminalDetector.isTerminalEditor(editor)) {
-            return settings.state.terminalCompletionEnabled
+            return settings.hasInlineCapabilityConfigured(isTerminal = true)
         }
-        return true
+        return settings.hasInlineCapabilityConfigured()
     }
 
     override fun restartOn(event: InlineCompletionEvent): Boolean = true

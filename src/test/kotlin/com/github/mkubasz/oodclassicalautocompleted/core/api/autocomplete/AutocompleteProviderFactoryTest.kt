@@ -2,23 +2,37 @@ package com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete
 
 import com.github.mkubasz.oodclassicalautocompleted.settings.AutocompleteProviderType
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
+import com.github.mkubasz.oodclassicalautocompleted.settings.ProviderCredentialsService
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
+    // Touching this file keeps the test bytecode aligned with PluginSettings.State defaults.
+
+    private val credentials: ProviderCredentialsService
+        get() = ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
+
+    override fun tearDown() {
+        try {
+            credentials.setApiKey(AutocompleteProviderType.ANTHROPIC, null)
+            credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, null)
+        } finally {
+            super.tearDown()
+        }
+    }
 
     fun testReturnsNullWhenAnthropicKeysBlank() {
-        val state = PluginSettings.State().apply {
-            apiKey = ""
-            autocompleteProvider = AutocompleteProviderType.ANTHROPIC
-        }
+        val state = PluginSettings.State(
+            inlineProvider = AutocompleteProviderType.ANTHROPIC,
+        )
         assertNull(AutocompleteProviderFactory.createFimProvider(state))
     }
 
     fun testCreatesAnthropicProvider() {
-        val state = PluginSettings.State().apply {
-            apiKey = "sk-key"
-            autocompleteProvider = AutocompleteProviderType.ANTHROPIC
-        }
+        credentials.setApiKey(AutocompleteProviderType.ANTHROPIC, "sk-key")
+        val state = PluginSettings.State(
+            inlineProvider = AutocompleteProviderType.ANTHROPIC,
+        )
         val provider = AutocompleteProviderFactory.createFimProvider(state)
         assertNotNull(provider)
         assertTrue(provider is AnthropicAutocompleteProvider)
@@ -26,19 +40,19 @@ class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
     }
 
     fun testReturnsNullWhenInceptionLabsKeyBlank() {
-        val state = PluginSettings.State().apply {
-            inceptionLabsApiKey = ""
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        }
+        val state = PluginSettings.State(
+            inlineProvider = AutocompleteProviderType.INCEPTION_LABS,
+            nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+        )
         assertNull(AutocompleteProviderFactory.createFimProvider(state))
         assertNull(AutocompleteProviderFactory.createNextEditProvider(state))
     }
 
     fun testCreatesFimProviderForInceptionLabs() {
-        val state = PluginSettings.State().apply {
-            inceptionLabsApiKey = "il-key"
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        }
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+        val state = PluginSettings.State(
+            inlineProvider = AutocompleteProviderType.INCEPTION_LABS,
+        )
         val provider = AutocompleteProviderFactory.createFimProvider(state)
         assertNotNull(provider)
         assertTrue(provider is InceptionLabsFimProvider)
@@ -46,10 +60,10 @@ class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
     }
 
     fun testCreatesNextEditProviderForInceptionLabs() {
-        val state = PluginSettings.State().apply {
-            inceptionLabsApiKey = "il-key"
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        }
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+        val state = PluginSettings.State(
+            nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+        )
         val provider = AutocompleteProviderFactory.createNextEditProvider(state)
         assertNotNull(provider)
         assertTrue(provider is InceptionLabsNextEditProvider)
@@ -57,19 +71,29 @@ class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
     }
 
     fun testReturnsNoNextEditProviderForAnthropic() {
-        val state = PluginSettings.State().apply {
-            apiKey = "sk-key"
-            autocompleteProvider = AutocompleteProviderType.ANTHROPIC
-        }
+        credentials.setApiKey(AutocompleteProviderType.ANTHROPIC, "sk-key")
+        val state = PluginSettings.State(
+            nextEditProvider = AutocompleteProviderType.ANTHROPIC,
+        )
+        assertNull(AutocompleteProviderFactory.createNextEditProvider(state))
+    }
+
+    fun testReturnsNoNextEditProviderWhenNextEditDisabled() {
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+        val state = PluginSettings.State(
+            nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            nextEditEnabled = false,
+        )
         assertNull(AutocompleteProviderFactory.createNextEditProvider(state))
     }
 
     fun testUsesCustomBaseUrlForInceptionLabs() {
-        val state = PluginSettings.State().apply {
-            inceptionLabsApiKey = "il-key"
-            inceptionLabsBaseUrl = "https://custom.endpoint/v1"
-            autocompleteProvider = AutocompleteProviderType.INCEPTION_LABS
-        }
+        credentials.setApiKey(AutocompleteProviderType.INCEPTION_LABS, "il-key")
+        val state = PluginSettings.State(
+            inlineProvider = AutocompleteProviderType.INCEPTION_LABS,
+            nextEditProvider = AutocompleteProviderType.INCEPTION_LABS,
+            inceptionLabsBaseUrl = "https://custom.endpoint/v1",
+        )
         val fim = AutocompleteProviderFactory.createFimProvider(state)
         val nextEdit = AutocompleteProviderFactory.createNextEditProvider(state)
         assertNotNull(fim)
@@ -87,8 +111,10 @@ class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
         )
         assertNull(request.cursorOffset)
         assertNull(request.inlineContext)
+        assertNull(request.retrievedChunks)
         assertNull(request.recentlyViewedSnippets)
         assertNull(request.editDiffHistory)
+        assertNull(request.gitDiff)
     }
 
     fun testAutocompleteRequestCopyEnrichesWithContext() {
@@ -107,16 +133,28 @@ class AutocompleteProviderFactoryTest : BasePlatformTestCase() {
                 lexicalContext = InlineLexicalContext.CODE,
                 isAfterMemberAccess = true,
             ),
+            retrievedChunks = listOf(
+                RetrievedContextChunk(
+                    filePath = "DatabaseClient.kt",
+                    content = "class DatabaseClient",
+                    score = 2.0,
+                )
+            ),
             recentlyViewedSnippets = snippets,
             editDiffHistory = diffs,
+            gitDiff = "diff --git a/Test.kt b/Test.kt",
         )
 
         assertEquals(8, enriched.cursorOffset)
         assertEquals(InlineLexicalContext.CODE, enriched.inlineContext?.lexicalContext)
+        assertEquals(1, enriched.retrievedChunks?.size)
         assertEquals(1, enriched.recentlyViewedSnippets?.size)
         assertEquals("Other.kt", enriched.recentlyViewedSnippets?.get(0)?.filePath)
         assertEquals(1, enriched.editDiffHistory?.size)
+        assertEquals("diff --git a/Test.kt b/Test.kt", enriched.gitDiff)
         assertNull(base.cursorOffset)
         assertNull(base.inlineContext)
+        assertNull(base.retrievedChunks)
+        assertNull(base.gitDiff)
     }
 }

@@ -216,6 +216,19 @@ class InceptionLabsNextEditProvider(
         appendLine("<|/current_file_content|>")
 
         // Section 3: Edit diff history
+        appendLine("<|retrieved_context|>")
+        request.retrievedChunks?.forEach { chunk ->
+            appendLine("retrieved_file_path: ${chunk.filePath}")
+            appendLine(chunk.content)
+        }
+        appendLine("<|/retrieved_context|>")
+
+        // Section 4: Git diff
+        appendLine("<|git_diff|>")
+        request.gitDiff?.takeIf { it.isNotBlank() }?.let(::appendLine)
+        appendLine("<|/git_diff|>")
+
+        // Section 5: Edit diff history
         appendLine("<|edit_diff_history|>")
         request.editDiffHistory?.forEach { diff ->
             appendLine(diff)

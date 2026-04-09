@@ -6,7 +6,7 @@ internal object InlineModelContextFormatter {
         val lines = buildContentLines(context)
         if (lines.isEmpty()) return ""
 
-        val commentPrefix = commentPrefix(language)
+        val commentPrefix = PromptCommentPrefix.forLanguage(language)
         return lines.joinToString(separator = "\n", postfix = "\n") { line ->
             if (line.isBlank()) commentPrefix else "$commentPrefix $line"
         }
@@ -25,6 +25,16 @@ internal object InlineModelContextFormatter {
 
         if (context.lexicalContext != InlineLexicalContext.UNKNOWN) {
             lines += "lexical_context: ${context.lexicalContext.name.lowercase()}"
+        }
+        if (!context.currentDefinitionName.isNullOrBlank()) {
+            lines += "current_definition: ${context.currentDefinitionName}"
+        }
+        if (context.currentParameterNames.isNotEmpty()) {
+            lines += "current_parameters: ${context.currentParameterNames.joinToString(", ")}"
+        }
+        if (context.isFreshBlockBodyContext) {
+            lines += "fresh_block_body_context: true"
+            lines += "body_guidance: continue the current block with implementation details only; avoid tutorial/example scaffolding and unrelated helper usage"
         }
         if (context.isDecoratorLikeContext) {
             lines += "decorator_like_context: true"
@@ -82,7 +92,7 @@ internal object InlineModelContextFormatter {
         if (context.resolvedDefinitions.isNotEmpty()) {
             context.resolvedDefinitions.forEach { def ->
                 val header = buildString {
-                    append("cross_file_definition: ${def.name}")
+                    append(if (def.filePath.isNullOrBlank()) "nearby_definition: ${def.name}" else "cross_file_definition: ${def.name}")
                     def.filePath?.let { append(" (${it.substringAfterLast('/')})") }
                 }
                 lines += header
@@ -92,59 +102,4 @@ internal object InlineModelContextFormatter {
 
         return lines.takeIf { it.size > 1 }.orEmpty()
     }
-
-    private fun commentPrefix(language: String?): String {
-        val normalized = language.orEmpty().trim().lowercase()
-        return when {
-            normalized.isBlank() -> "//"
-            normalized in hashCommentLanguages ||
-                normalized.contains("python") ||
-                normalized.contains("shell") ||
-                normalized.contains("bash") ||
-                normalized.contains("fish") -> "#"
-            normalized in doubleDashCommentLanguages -> "--"
-            normalized in slashSlashCommentLanguages ||
-                normalized == "golang" ||
-                normalized.contains("rust") ||
-                normalized.contains("java") ||
-                normalized.contains("kotlin") ||
-                normalized.contains("json") ||
-                normalized.contains("php") -> "//"
-            else -> "//"
-        }
-    }
-
-    private val hashCommentLanguages = setOf(
-        "py",
-        "python",
-        "rb",
-        "ruby",
-        "sh",
-        "shell",
-        "shell script",
-        "bash",
-        "fish",
-        "fish shell",
-        "yaml",
-        "yml",
-        "toml",
-        "dockerfile",
-    )
-
-    private val doubleDashCommentLanguages = setOf(
-        "sql",
-        "lua",
-        "haskell",
-    )
-
-    private val slashSlashCommentLanguages = setOf(
-        "go",
-        "rust",
-        "java",
-        "kotlin",
-        "kt",
-        "json",
-        "json5",
-        "php",
-    )
 }

@@ -10,6 +10,8 @@
         <!-- Settings -->
         <applicationService
             serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings"/>
+        <applicationService
+            serviceImplementation="com.github.mkubasz.oodclassicalautocompleted.settings.ProviderCredentialsService"/>
 
         <projectConfigurable
             groupId="tools"

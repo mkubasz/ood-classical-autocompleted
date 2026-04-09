@@ -16,6 +16,7 @@ class AnthropicAutocompleteProvider(
     private val apiKey: String,
     private val baseUrl: String,
     private val model: String,
+    private val contextBudgetChars: Int = DEFAULT_CONTEXT_BUDGET_CHARS,
 ) : AutocompleteProvider {
 
     override val capabilities: Set<AutocompleteCapability> = setOf(AutocompleteCapability.INLINE)
@@ -146,14 +147,12 @@ class AnthropicAutocompleteProvider(
     }
 
     private fun buildPrompt(request: AutocompleteRequest): String {
-        val semanticContext = request.inlineContext
-            ?.let { InlineModelContextFormatter.formatForInstructionPrompt(it) }
-            .orEmpty()
+        val semanticContext = PromptContextFormatter.formatForInstructionPrompt(request)
         val packed = ContextBudgetPacker.pack(
             semanticContext = semanticContext,
             fullPrefix = request.prefix,
             fullSuffix = request.suffix,
-            budget = BUDGET,
+            budget = ContextBudgetPacker.anthropicBudget(contextBudgetChars),
         )
         return buildString {
             appendLine("Complete the code at the cursor.")
@@ -182,12 +181,7 @@ class AnthropicAutocompleteProvider(
     companion object {
         private const val API_VERSION = "2023-06-01"
         private const val MAX_TOKENS = 96
-        private val BUDGET = ContextBudgetPacker.Budget(
-            totalChars = 3_500,
-            minPrefixChars = 800,
-            minSuffixChars = 500,
-            maxSemanticChars = 800,
-        )
+        private const val DEFAULT_CONTEXT_BUDGET_CHARS = 3_500
         private const val AUTOCOMPLETE_SYSTEM_PROMPT = """
             You are a JetBrains IDE autocomplete engine.
             Continue the code at the cursor.

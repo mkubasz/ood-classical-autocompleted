@@ -3,8 +3,26 @@ package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
+import com.intellij.openapi.application.ApplicationManager
 
 internal object InlineCandidatePreparation {
+
+    data class Options(
+        val minConfidenceScore: Double = 0.0,
+        val correctnessFilterEnabled: Boolean = false,
+        val onCorrectnessResult: ((InlineCorrectnessFilter.Result) -> Unit)? = null,
+    ) {
+        companion object {
+            fun fromSettings(): Options {
+                val application = ApplicationManager.getApplication() ?: return Options()
+                val settings = application.getService(PluginSettings::class.java)?.state ?: return Options()
+                return Options(
+                    minConfidenceScore = settings.minConfidenceScore,
+                    correctnessFilterEnabled = settings.correctnessFilterEnabled,
+                )
+            }
+        }
+    }
 
     data class PreparationResult(
         val candidates: List<InlineCompletionCandidate>,
@@ -16,11 +34,26 @@ internal object InlineCandidatePreparation {
         request: AutocompleteRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
+    ): List<InlineCompletionCandidate> = prepare(
+        rawCandidates = rawCandidates,
+        request = request,
+        snapshot = snapshot,
+        maxSuggestionChars = maxSuggestionChars,
+        options = Options.fromSettings(),
+    )
+
+    fun prepare(
+        rawCandidates: List<InlineCompletionCandidate>,
+        request: AutocompleteRequest,
+        snapshot: CompletionContextSnapshot? = null,
+        maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
+        options: Options,
     ): List<InlineCompletionCandidate> = prepareWithDiagnostics(
         rawCandidates = rawCandidates,
         request = request,
         snapshot = snapshot,
         maxSuggestionChars = maxSuggestionChars,
+        options = options,
     ).candidates
 
     fun prepareWithDiagnostics(
@@ -28,8 +61,21 @@ internal object InlineCandidatePreparation {
         request: AutocompleteRequest,
         snapshot: CompletionContextSnapshot? = null,
         maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
+    ): PreparationResult = prepareWithDiagnostics(
+        rawCandidates = rawCandidates,
+        request = request,
+        snapshot = snapshot,
+        maxSuggestionChars = maxSuggestionChars,
+        options = Options.fromSettings(),
+    )
+
+    fun prepareWithDiagnostics(
+        rawCandidates: List<InlineCompletionCandidate>,
+        request: AutocompleteRequest,
+        snapshot: CompletionContextSnapshot? = null,
+        maxSuggestionChars: Int = DEFAULT_MAX_SUGGESTION_CHARS,
+        options: Options,
     ): PreparationResult {
-        val settings = PluginSettings.getInstance().state
         var retryRequest: AutocompleteRequest? = null
 
         val candidates = rawCandidates.mapNotNull { candidate ->
@@ -63,17 +109,19 @@ internal object InlineCandidatePreparation {
                 }
             }
         }
+            .filter { candidate -> InlineBoilerplateFilter.isAllowed(candidate, request) }
             .distinctBy { it.insertionOffset to it.text }
             .map { candidate ->
                 val score = InlineConfidenceScorer.score(candidate, request)
                 candidate.copy(confidenceScore = score)
             }
-            .filter { it.confidenceScore == null || it.confidenceScore >= settings.minConfidenceScore }
+            .filter { it.confidenceScore == null || it.confidenceScore >= options.minConfidenceScore }
             .let { scored ->
-                if (!settings.correctnessFilterEnabled || snapshot == null) return@let scored
+                if (!options.correctnessFilterEnabled || snapshot == null) return@let scored
                 scored.filter { candidate ->
-                    InlineCorrectnessFilter.check(candidate, request, snapshot) !=
-                        InlineCorrectnessFilter.Result.Fail
+                    val result = InlineCorrectnessFilter.check(candidate, request, snapshot)
+                    options.onCorrectnessResult?.invoke(result)
+                    result !is InlineCorrectnessFilter.Result.Reject
                 }
             }
 

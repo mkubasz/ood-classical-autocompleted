@@ -3,29 +3,35 @@ package com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete
 import com.github.mkubasz.oodclassicalautocompleted.settings.AutocompleteProviderType
 import com.github.mkubasz.oodclassicalautocompleted.settings.InceptionLabsAdvancedSettings
 import com.github.mkubasz.oodclassicalautocompleted.settings.PluginSettings
+import com.github.mkubasz.oodclassicalautocompleted.settings.ProviderCredentialsService
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 
 object AutocompleteProviderFactory {
 
     private val log = logger<AutocompleteProviderFactory>()
 
-    fun createFimProvider(state: PluginSettings.State): AutocompleteProvider? = when (state.autocompleteProvider) {
+    fun createFimProvider(state: PluginSettings.State): AutocompleteProvider? = when (state.resolvedInlineProvider()) {
         AutocompleteProviderType.ANTHROPIC -> {
-            if (state.apiKey.isBlank()) return null
+            val apiKey = credentials().getApiKey(AutocompleteProviderType.ANTHROPIC).orEmpty()
+            if (apiKey.isBlank()) return null
             AnthropicAutocompleteProvider(
-                apiKey = state.apiKey,
+                apiKey = apiKey,
                 baseUrl = state.baseUrl.ifBlank { PluginSettings.DEFAULT_API_URL },
                 model = state.model.ifBlank { PluginSettings.DEFAULT_MODEL },
+                contextBudgetChars = state.contextBudgetChars,
             )
         }
 
         AutocompleteProviderType.INCEPTION_LABS -> {
-            if (state.inceptionLabsApiKey.isBlank()) return null
+            val apiKey = credentials().getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty()
+            if (apiKey.isBlank()) return null
             InceptionLabsFimProvider(
-                apiKey = state.inceptionLabsApiKey,
+                apiKey = apiKey,
                 baseUrl = state.inceptionLabsBaseUrl.ifBlank { InceptionLabsFimProvider.DEFAULT_BASE_URL },
                 model = state.inceptionLabsModel.ifBlank { InceptionLabsFimProvider.DEFAULT_MODEL },
                 generationOptions = safeFimOptions(state),
+                contextBudgetChars = state.contextBudgetChars,
             )
         }
     }
@@ -34,30 +40,36 @@ object AutocompleteProviderFactory {
         if (!state.terminalCompletionEnabled) return null
         return when (state.terminalProvider) {
             AutocompleteProviderType.ANTHROPIC -> {
-                if (state.apiKey.isBlank()) return null
+                val apiKey = credentials().getApiKey(AutocompleteProviderType.ANTHROPIC).orEmpty()
+                if (apiKey.isBlank()) return null
                 AnthropicAutocompleteProvider(
-                    apiKey = state.apiKey,
+                    apiKey = apiKey,
                     baseUrl = state.baseUrl.ifBlank { PluginSettings.DEFAULT_API_URL },
                     model = state.model.ifBlank { PluginSettings.DEFAULT_MODEL },
+                    contextBudgetChars = state.contextBudgetChars,
                 )
             }
             AutocompleteProviderType.INCEPTION_LABS -> {
-                if (state.inceptionLabsApiKey.isBlank()) return null
+                val apiKey = credentials().getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty()
+                if (apiKey.isBlank()) return null
                 InceptionLabsFimProvider(
-                    apiKey = state.inceptionLabsApiKey,
+                    apiKey = apiKey,
                     baseUrl = state.inceptionLabsBaseUrl.ifBlank { InceptionLabsFimProvider.DEFAULT_BASE_URL },
                     model = state.inceptionLabsModel.ifBlank { InceptionLabsFimProvider.DEFAULT_MODEL },
                     generationOptions = safeFimOptions(state),
+                    contextBudgetChars = state.contextBudgetChars,
                 )
             }
         }
     }
 
     fun createNextEditProvider(state: PluginSettings.State): AutocompleteProvider? {
-        if (state.autocompleteProvider != AutocompleteProviderType.INCEPTION_LABS) return null
-        if (state.inceptionLabsApiKey.isBlank()) return null
+        if (!state.nextEditEnabled) return null
+        if (state.resolvedNextEditProvider() != AutocompleteProviderType.INCEPTION_LABS) return null
+        val apiKey = credentials().getApiKey(AutocompleteProviderType.INCEPTION_LABS).orEmpty()
+        if (apiKey.isBlank()) return null
         return InceptionLabsNextEditProvider(
-            apiKey = state.inceptionLabsApiKey,
+            apiKey = apiKey,
             baseUrl = state.inceptionLabsBaseUrl.ifBlank { InceptionLabsNextEditProvider.DEFAULT_BASE_URL },
             model = state.inceptionLabsModel.ifBlank { InceptionLabsNextEditProvider.DEFAULT_MODEL },
             generationOptions = safeNextEditOptions(state),
@@ -85,4 +97,7 @@ object AutocompleteProviderFactory {
                 log.warn("Invalid Inception Next Edit context settings. Falling back to defaults.", error)
                 InceptionLabsNextEditContextOptions()
             }
+
+    private fun credentials(): ProviderCredentialsService =
+        ApplicationManager.getApplication().getService(ProviderCredentialsService::class.java)
 }

@@ -27,10 +27,10 @@ private class OodStatusBarWidget(private val project: Project) : StatusBarWidget
 
     override fun getText(): String {
         val settings = PluginSettings.getInstance()
-        if (!settings.isConfigured) return "OOD Autocomplete: Setup"
+        val activeProvider = settings.activeInlineProvider() ?: return "OOD Autocomplete: Setup"
 
         return if (settings.state.autocompleteEnabled) {
-            "OOD Autocomplete: ${providerLabel(settings)}"
+            "OOD Autocomplete: ${providerLabel(settings, activeProvider)}"
         } else {
             "OOD Autocomplete: Off"
         }
@@ -40,11 +40,12 @@ private class OodStatusBarWidget(private val project: Project) : StatusBarWidget
         val settings = PluginSettings.getInstance()
         return buildString {
             append("OOD Autocomplete")
-            if (!settings.isConfigured) {
+            val activeProvider = settings.activeInlineProvider()
+            if (activeProvider == null) {
                 append(" is not configured. Click to open settings.")
             } else {
                 append(" using ")
-                append(activeModel(settings))
+                append(activeModel(settings, activeProvider))
                 append(". Click to open settings.")
             }
         }
@@ -60,14 +61,15 @@ private class OodStatusBarWidget(private val project: Project) : StatusBarWidget
 
     override fun dispose() {}
 
-    private fun providerLabel(settings: PluginSettings): String =
-        when (settings.state.autocompleteProvider) {
+    private fun providerLabel(settings: PluginSettings, provider: AutocompleteProviderType): String =
+        when (provider) {
             AutocompleteProviderType.ANTHROPIC -> activeModel(settings).substringAfterLast('/')
             AutocompleteProviderType.INCEPTION_LABS -> activeModel(settings)
         }
 
-    private fun activeModel(settings: PluginSettings): String =
-        when (settings.state.autocompleteProvider) {
+    private fun activeModel(settings: PluginSettings, provider: AutocompleteProviderType = settings.activeInlineProvider()
+        ?: settings.state.resolvedInlineProvider()): String =
+        when (provider) {
             AutocompleteProviderType.ANTHROPIC ->
                 settings.state.model.ifBlank { PluginSettings.DEFAULT_MODEL }
             AutocompleteProviderType.INCEPTION_LABS ->

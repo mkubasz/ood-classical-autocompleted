@@ -69,6 +69,28 @@ class InlineModelContextFormatterTest {
         assertTrue(formatted.contains("# expected_header_continuation: wiek):"))
     }
 
+    @Test
+    fun includesFreshBlockGuidanceAndNearbyDefinitionLabels() {
+        val formatted = InlineModelContextFormatter.formatForCodePrefix(
+            sampleContext().copy(
+                currentDefinitionName = "my_new_workflow",
+                currentParameterNames = listOf("message"),
+                isFreshBlockBodyContext = true,
+                resolvedDefinitions = listOf(
+                    ResolvedDefinition(name = "calculate_average", filePath = null, signature = "def calculate_average(numbers):"),
+                    ResolvedDefinition(name = "Workflow", filePath = "/tmp/workflow.py", signature = "class Workflow:"),
+                ),
+            ),
+            "python",
+        )
+
+        assertTrue(formatted.contains("# current_definition: my_new_workflow"))
+        assertTrue(formatted.contains("# current_parameters: message"))
+        assertTrue(formatted.contains("# fresh_block_body_context: true"))
+        assertTrue(formatted.contains("# nearby_definition: calculate_average"))
+        assertTrue(formatted.contains("# cross_file_definition: Workflow (workflow.py)"))
+    }
+
     private fun sampleContext(): InlineModelContext = InlineModelContext(
         lexicalContext = InlineLexicalContext.CODE,
         isAfterMemberAccess = true,

@@ -51,4 +51,22 @@ class ContextBudgetPackerTest : BasePlatformTestCase() {
 
         assertEquals(500, packed.semanticPrefix.length)
     }
+
+    fun testAnthropicBudgetScalesFromConfiguredTotal() {
+        val budget = ContextBudgetPacker.anthropicBudget(2_100)
+
+        assertEquals(2_100, budget.totalChars)
+        assertTrue(budget.minPrefixChars >= 300)
+        assertTrue(budget.minSuffixChars >= 150)
+        assertTrue(budget.maxSemanticChars >= 250)
+    }
+
+    fun testInceptionFimBudgetScalesFromConfiguredTotal() {
+        val budget = ContextBudgetPacker.inceptionFimBudget(2_400)
+
+        assertEquals(2_400, budget.totalChars)
+        assertTrue(budget.minPrefixChars >= 300)
+        assertTrue(budget.minSuffixChars >= 150)
+        assertTrue(budget.maxSemanticChars >= 250)
+    }
 }

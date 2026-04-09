@@ -17,6 +17,7 @@ class InceptionLabsFimProvider(
     baseUrl: String = DEFAULT_BASE_URL,
     private val model: String = DEFAULT_MODEL,
     private val generationOptions: InceptionLabsGenerationOptions = InceptionLabsGenerationOptions(),
+    private val contextBudgetChars: Int = DEFAULT_CONTEXT_BUDGET_CHARS,
 ) : AutocompleteProvider {
 
     override val capabilities: Set<AutocompleteCapability> = setOf(AutocompleteCapability.INLINE)
@@ -35,7 +36,7 @@ class InceptionLabsFimProvider(
     }
 
     private val log = logger<InceptionLabsFimProvider>()
-
+    
     override suspend fun complete(request: AutocompleteRequest): CompletionResponse? {
         if (apiKey.isBlank()) return null
 
@@ -43,6 +44,7 @@ class InceptionLabsFimProvider(
             model = model,
             request = request,
             options = generationOptions,
+            contextBudget = ContextBudgetPacker.inceptionFimBudget(contextBudgetChars),
         )
 
         return try {
@@ -96,6 +98,7 @@ class InceptionLabsFimProvider(
             model = model,
             request = request,
             options = generationOptions,
+            contextBudget = ContextBudgetPacker.inceptionFimBudget(contextBudgetChars),
         )
         val streamBody = buildJsonObject {
             body.forEach { (k, v) -> put(k, v) }
@@ -176,5 +179,6 @@ class InceptionLabsFimProvider(
     companion object {
         const val DEFAULT_BASE_URL = "https://api.inceptionlabs.ai/v1"
         const val DEFAULT_MODEL = "mercury-edit-2"
+        private const val DEFAULT_CONTEXT_BUDGET_CHARS = 4_000
     }
 }

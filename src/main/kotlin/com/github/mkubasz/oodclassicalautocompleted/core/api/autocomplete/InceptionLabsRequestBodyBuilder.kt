@@ -74,9 +74,7 @@ internal object InceptionLabsRequestBodyBuilder {
         request: AutocompleteRequest,
         budget: ContextBudgetPacker.Budget,
     ): ContextBudgetPacker.PackedContext {
-        val semanticContext = request.inlineContext
-            ?.let { InlineModelContextFormatter.formatForCodePrefix(it, request.language) }
-            .orEmpty()
+        val semanticContext = PromptContextFormatter.formatForCodePrefix(request)
 
         return ContextBudgetPacker.pack(
             semanticContext = semanticContext,
