@@ -22,7 +22,12 @@ class OodInlineCompletionProvider : InlineCompletionProvider {
 
         val request = event.toRequest() ?: return false
         val editor = request.editor
-        return !editor.isViewer && !editor.selectionModel.hasSelection()
+        if (editor.isViewer || editor.selectionModel.hasSelection()) return false
+
+        if (TerminalDetector.isTerminalEditor(editor)) {
+            return settings.state.terminalCompletionEnabled
+        }
+        return true
     }
 
     override fun restartOn(event: InlineCompletionEvent): Boolean = true

@@ -3,7 +3,9 @@ package com.github.mkubasz.oodclassicalautocompleted.editor.autocomplete
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.AutocompleteRequest
 import com.github.mkubasz.oodclassicalautocompleted.core.api.autocomplete.InlineCompletionCandidate
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor
 
 internal object InlineCorrectnessFilter {
@@ -42,31 +44,60 @@ internal object InlineCorrectnessFilter {
                     filePath = snapshot.filePath,
                 ) ?: return@runReadAction Result.Pass
 
-                var errorCount = 0
+                var syntaxErrors = 0
+                var unresolvedRefs = 0
+                var timedOut = false
+
                 psiFile.accept(object : PsiRecursiveElementWalkingVisitor() {
-                    override fun visitErrorElement(element: PsiErrorElement) {
+                    override fun visitElement(element: PsiElement) {
                         val elapsed = (System.nanoTime() - startTime) / 1_000_000
                         if (elapsed > timeLimitMs) {
+                            timedOut = true
                             stopWalking()
                             return
                         }
-                        val range = element.textRange ?: return
-                        if (range.startOffset < insertedRange.last + 1 && range.endOffset > insertedRange.first) {
-                            errorCount++
+
+                        val range = element.textRange ?: run { super.visitElement(element); return }
+                        val inInsertedRegion = range.startOffset < insertedRange.last + 1 &&
+                            range.endOffset > insertedRange.first
+                        if (!inInsertedRegion) {
+                            super.visitElement(element)
+                            return
                         }
+
+                        if (element is PsiErrorElement) {
+                            syntaxErrors++
+                        }
+
+                        if (element is PsiNamedElement || isIdentifierLeaf(element)) {
+                            element.references.forEach { ref ->
+                                if (runCatching { ref.resolve() }.getOrNull() == null) {
+                                    unresolvedRefs++
+                                }
+                            }
+                        }
+
+                        super.visitElement(element)
                     }
                 })
 
-                val elapsed = (System.nanoTime() - startTime) / 1_000_000
-                if (elapsed > timeLimitMs) return@runReadAction Result.Timeout
-
-                if (errorCount > MAX_TOLERATED_ERRORS) Result.Fail else Result.Pass
+                if (timedOut) return@runReadAction Result.Timeout
+                if (syntaxErrors > MAX_TOLERATED_SYNTAX_ERRORS) return@runReadAction Result.Fail
+                if (unresolvedRefs > MAX_TOLERATED_UNRESOLVED) return@runReadAction Result.Fail
+                Result.Pass
             }
         } catch (_: Exception) {
             Result.Pass
         }
     }
 
+    private fun isIdentifierLeaf(element: PsiElement): Boolean {
+        if (element.firstChild != null) return false
+        val text = element.text
+        return text.isNotEmpty() && (text[0].isLetter() || text[0] == '_') && text.length >= 2
+    }
+
     private const val DEFAULT_TIME_LIMIT_MS = 50L
-    private const val MAX_TOLERATED_ERRORS = 2
+    private const val MAX_TOLERATED_SYNTAX_ERRORS = 2
+    private const val MAX_TOLERATED_UNRESOLVED = 3
 }

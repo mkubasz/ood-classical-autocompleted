@@ -40,6 +40,8 @@ class PluginSettingsConfigurable : Configurable {
     private var suggestionCacheTtlField: JBTextField? = null
     private var suggestionCacheMaxEntriesField: JBTextField? = null
     private var debugMetricsLoggingCheckbox: JBCheckBox? = null
+    private var terminalCompletionCheckbox: JBCheckBox? = null
+    private var terminalProviderCombo: ComboBox<AutocompleteProviderType>? = null
 
     private var inceptionLabsApiKeyField: JBPasswordField? = null
     private var inceptionLabsBaseUrlField: JBTextField? = null
@@ -60,6 +62,8 @@ class PluginSettingsConfigurable : Configurable {
     private var inceptionLabsNextEditExtraBodyJsonArea: JBTextArea? = null
     private var inceptionLabsNextEditLinesAboveField: JBTextField? = null
     private var inceptionLabsNextEditLinesBelowField: JBTextField? = null
+    private var inceptionLabsNextEditDiffusingCheckbox: JBCheckBox? = null
+    private var inceptionLabsNextEditReasoningEffortField: JBTextField? = null
 
     private var tabbedPane: JBTabbedPane? = null
 
@@ -91,6 +95,10 @@ class PluginSettingsConfigurable : Configurable {
         suggestionCacheTtlField = JBTextField(state.suggestionCacheTtlMs.toString(), 10)
         suggestionCacheMaxEntriesField = numericField(state.suggestionCacheMaxEntries)
         debugMetricsLoggingCheckbox = JBCheckBox("Enable local debug metrics logging", state.debugMetricsLogging)
+        terminalCompletionCheckbox = JBCheckBox("Enable completion in terminal", state.terminalCompletionEnabled)
+        terminalProviderCombo = ComboBox(DefaultComboBoxModel(AutocompleteProviderType.entries.toTypedArray())).apply {
+            selectedItem = state.terminalProvider
+        }
 
         inceptionLabsApiKeyField = JBPasswordField().apply { text = state.inceptionLabsApiKey; columns = 40 }
         inceptionLabsBaseUrlField = JBTextField(state.inceptionLabsBaseUrl, 40)
@@ -111,6 +119,8 @@ class PluginSettingsConfigurable : Configurable {
         inceptionLabsNextEditExtraBodyJsonArea = textArea(state.inceptionLabsNextEditExtraBodyJson, rows = 5)
         inceptionLabsNextEditLinesAboveField = numericField(state.inceptionLabsNextEditLinesAboveCursor)
         inceptionLabsNextEditLinesBelowField = numericField(state.inceptionLabsNextEditLinesBelowCursor)
+        inceptionLabsNextEditDiffusingCheckbox = JBCheckBox("Enable diffusing", state.inceptionLabsNextEditDiffusing)
+        inceptionLabsNextEditReasoningEffortField = JBTextField(state.inceptionLabsNextEditReasoningEffort, 10)
 
         tabbedPane = JBTabbedPane().apply {
             addTab("General", buildGeneralTab())
@@ -174,7 +184,15 @@ class PluginSettingsConfigurable : Configurable {
                     .comment("Optional. Examples: 'cmd+u', 'cmd+[', or 'ctrl+alt+,'")
             }
         }
-        group("Debug") {
+        group("Experimental") {
+            row {
+                cell(terminalCompletionCheckbox!!)
+                    .comment("Provide AI completions in the integrated terminal (experimental)")
+            }
+            row("Terminal provider:") {
+                cell(terminalProviderCombo!!)
+                    .comment("Leave as-is to use the same provider as code completion")
+            }
             row {
                 cell(debugMetricsLoggingCheckbox!!)
             }
@@ -279,6 +297,14 @@ class PluginSettingsConfigurable : Configurable {
                 cell(inceptionLabsNextEditLinesBelowField!!)
                     .comment("Default: ${InceptionLabsNextEditContextOptions.DEFAULT_LINES_BELOW_CURSOR}")
             }
+            row {
+                cell(inceptionLabsNextEditDiffusingCheckbox!!)
+                    .comment("Enable diffusing mode for NextEdit completions")
+            }
+            row("Reasoning effort:") {
+                cell(inceptionLabsNextEditReasoningEffortField!!)
+                    .comment("low, medium, or high. Default: low")
+            }
         }
     }
 
@@ -301,6 +327,8 @@ class PluginSettingsConfigurable : Configurable {
             suggestionCacheTtlField?.text != state.suggestionCacheTtlMs.toString() ||
             suggestionCacheMaxEntriesField?.text != state.suggestionCacheMaxEntries.toString() ||
             debugMetricsLoggingCheckbox?.isSelected != state.debugMetricsLogging ||
+            terminalCompletionCheckbox?.isSelected != state.terminalCompletionEnabled ||
+            terminalProviderCombo?.selectedItem != state.terminalProvider ||
             String(inceptionLabsApiKeyField?.password ?: charArrayOf()) != state.inceptionLabsApiKey ||
             inceptionLabsBaseUrlField?.text != state.inceptionLabsBaseUrl ||
             inceptionLabsModelField?.text != state.inceptionLabsModel ||
@@ -317,7 +345,9 @@ class PluginSettingsConfigurable : Configurable {
             inceptionLabsNextEditStopSequencesArea?.text != state.inceptionLabsNextEditStopSequences ||
             inceptionLabsNextEditExtraBodyJsonArea?.text != state.inceptionLabsNextEditExtraBodyJson ||
             inceptionLabsNextEditLinesAboveField?.text != state.inceptionLabsNextEditLinesAboveCursor.toString() ||
-            inceptionLabsNextEditLinesBelowField?.text != state.inceptionLabsNextEditLinesBelowCursor.toString()
+            inceptionLabsNextEditLinesBelowField?.text != state.inceptionLabsNextEditLinesBelowCursor.toString() ||
+            inceptionLabsNextEditDiffusingCheckbox?.isSelected != state.inceptionLabsNextEditDiffusing ||
+            inceptionLabsNextEditReasoningEffortField?.text != state.inceptionLabsNextEditReasoningEffort
     }
 
     override fun apply() {
@@ -361,6 +391,9 @@ class PluginSettingsConfigurable : Configurable {
                 "Cache max entries",
             ),
             debugMetricsLogging = debugMetricsLoggingCheckbox?.isSelected ?: false,
+            terminalCompletionEnabled = terminalCompletionCheckbox?.isSelected ?: false,
+            terminalProvider = terminalProviderCombo?.selectedItem as? AutocompleteProviderType
+                ?: AutocompleteProviderType.ANTHROPIC,
             inceptionLabsApiKey = String(inceptionLabsApiKeyField?.password ?: charArrayOf()),
             inceptionLabsBaseUrl = inceptionLabsBaseUrlField?.text ?: "",
             inceptionLabsModel = inceptionLabsModelField?.text ?: "",
@@ -408,6 +441,8 @@ class PluginSettingsConfigurable : Configurable {
                 inceptionLabsNextEditLinesBelowField?.text,
                 "Next Edit lines below cursor",
             ),
+            inceptionLabsNextEditDiffusing = inceptionLabsNextEditDiffusingCheckbox?.isSelected ?: false,
+            inceptionLabsNextEditReasoningEffort = inceptionLabsNextEditReasoningEffortField?.text?.trim() ?: "low",
         )
 
         try {
@@ -444,6 +479,8 @@ class PluginSettingsConfigurable : Configurable {
         suggestionCacheTtlField?.text = state.suggestionCacheTtlMs.toString()
         suggestionCacheMaxEntriesField?.text = state.suggestionCacheMaxEntries.toString()
         debugMetricsLoggingCheckbox?.isSelected = state.debugMetricsLogging
+        terminalCompletionCheckbox?.isSelected = state.terminalCompletionEnabled
+        terminalProviderCombo?.selectedItem = state.terminalProvider
 
         inceptionLabsApiKeyField?.text = state.inceptionLabsApiKey
         inceptionLabsBaseUrlField?.text = state.inceptionLabsBaseUrl
@@ -464,6 +501,8 @@ class PluginSettingsConfigurable : Configurable {
         inceptionLabsNextEditExtraBodyJsonArea?.text = state.inceptionLabsNextEditExtraBodyJson
         inceptionLabsNextEditLinesAboveField?.text = state.inceptionLabsNextEditLinesAboveCursor.toString()
         inceptionLabsNextEditLinesBelowField?.text = state.inceptionLabsNextEditLinesBelowCursor.toString()
+        inceptionLabsNextEditDiffusingCheckbox?.isSelected = state.inceptionLabsNextEditDiffusing
+        inceptionLabsNextEditReasoningEffortField?.text = state.inceptionLabsNextEditReasoningEffort
 
         // Tab layout handles provider visibility
     }

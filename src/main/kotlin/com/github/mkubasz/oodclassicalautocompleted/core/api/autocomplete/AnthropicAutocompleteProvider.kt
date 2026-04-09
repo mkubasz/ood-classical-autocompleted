@@ -6,6 +6,9 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.utils.io.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.*
 import java.util.concurrent.CancellationException
 
@@ -80,6 +83,61 @@ class AnthropicAutocompleteProvider(
             null
         }
     }
+
+    override suspend fun completeStreaming(request: AutocompleteRequest): Flow<String>? {
+        if (apiKey.isBlank()) return null
+
+        val body = buildJsonObject {
+            put("model", model)
+            put("max_tokens", MAX_TOKENS)
+            put("stream", true)
+            put("system", AUTOCOMPLETE_SYSTEM_PROMPT)
+            putJsonArray("messages") {
+                addJsonObject {
+                    put("role", "user")
+                    put("content", buildPrompt(request))
+                }
+            }
+        }
+        val bodyText = json.encodeToString(JsonObject.serializer(), body)
+
+        return channelFlow {
+            try {
+                httpClient.preparePost(baseUrl) {
+                    contentType(ContentType.Application.Json)
+                    header("x-api-key", apiKey)
+                    header("anthropic-version", API_VERSION)
+                    setBody(bodyText)
+                }.execute { response ->
+                    if (response.status != HttpStatusCode.OK) return@execute
+                    val channel = response.bodyAsChannel()
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line() ?: break
+                        if (!line.startsWith("data: ")) continue
+                        val data = line.removePrefix("data: ").trim()
+                        val chunk = parseAnthropicSseChunk(data)
+                        if (!chunk.isNullOrEmpty()) {
+                            send(chunk)
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger<AnthropicAutocompleteProvider>().warn("Anthropic streaming failed", e)
+            }
+        }
+    }
+
+    private fun parseAnthropicSseChunk(data: String): String? = try {
+        val event = json.parseToJsonElement(data).jsonObject
+        val type = event["type"]?.jsonPrimitive?.content
+        when (type) {
+            "content_block_delta" -> event["delta"]?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content
+            else -> null
+        }
+    } catch (_: Exception) { null }
 
     override fun cancel() {}
 

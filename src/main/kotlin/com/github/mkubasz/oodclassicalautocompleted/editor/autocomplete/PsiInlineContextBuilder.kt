@@ -50,11 +50,14 @@ internal object PsiInlineContextBuilder {
             }
             .orEmpty()
 
-        val crossFileDefinitions = resolveCrossFileDefinitions(
+        var crossFileDefinitions = resolveCrossFileDefinitions(
             psiFile = psiFile,
             documentText = documentText,
             caretOffset = caretOffset,
         )
+        if (crossFileDefinitions.isEmpty() && resolvedReference == null) {
+            crossFileDefinitions = HeuristicContextFallback.extractDefinitions(documentText, caretOffset)
+        }
 
         return InlineModelContext(
             lexicalContext = lexicalContext,

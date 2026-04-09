@@ -22,6 +22,7 @@ internal object InceptionLabsRequestBodyBuilder {
             put("model", model)
             put("prompt", prompt)
             put("suffix", suffix)
+            put("logprobs", true)
             putGenerationOptions(request, options)
             mergeExtraBody(options.extraBodyJson)
         }
@@ -53,6 +54,8 @@ internal object InceptionLabsRequestBodyBuilder {
         options.presencePenalty?.let { put("presence_penalty", it) }
         options.temperature?.let { put("temperature", it) }
         options.topP?.let { put("top_p", it) }
+        options.diffusing?.let { put("diffusing", it) }
+        options.reasoningEffort?.let { put("reasoning_effort", it) }
         val stopSequences = request
             ?.let { InceptionLabsFimStopSequencePolicy.merge(it, options.stopSequences) }
             ?: options.stopSequences

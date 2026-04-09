@@ -6,6 +6,9 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.utils.io.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.*
 import java.util.concurrent.CancellationException
 
@@ -102,6 +105,64 @@ class InceptionLabsNextEditProvider(
             null
         }
     }
+
+    override suspend fun completeStreaming(request: AutocompleteRequest): Flow<String>? {
+        if (apiKey.isBlank()) return null
+
+        val editableRegion = NextEditInlineAdapter.extractRegion(
+            request = request,
+            linesAboveCursor = contextOptions.linesAboveCursor,
+            linesBelowCursor = contextOptions.linesBelowCursor,
+        )
+        val prompt = buildNextEditPrompt(request, editableRegion)
+        val body = InceptionLabsRequestBodyBuilder.buildNextEditBody(
+            model = model,
+            prompt = prompt,
+            options = generationOptions,
+        )
+        val streamBody = buildJsonObject {
+            body.forEach { (k, v) -> put(k, v) }
+            put("stream", JsonPrimitive(true))
+        }
+        val bodyText = json.encodeToString(JsonObject.serializer(), streamBody)
+
+        return channelFlow {
+            try {
+                httpClient.preparePost(endpoint) {
+                    contentType(ContentType.Application.Json)
+                    header("Authorization", "Bearer $apiKey")
+                    setBody(bodyText)
+                }.execute { response ->
+                    if (response.status != HttpStatusCode.OK) {
+                        log.warn("NextEdit streaming status: ${response.status}")
+                        return@execute
+                    }
+                    val channel = response.bodyAsChannel()
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line() ?: break
+                        if (!line.startsWith("data: ")) continue
+                        val data = line.removePrefix("data: ").trim()
+                        if (data == "[DONE]") break
+                        val chunk = parseSseChunk(data)
+                        if (!chunk.isNullOrEmpty()) {
+                            send(chunk)
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("NextEdit streaming failed", e)
+            }
+        }
+    }
+
+    private fun parseSseChunk(data: String): String? = try {
+        val event = json.parseToJsonElement(data).jsonObject
+        event["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+            ?.get("delta")?.jsonObject
+            ?.get("content")?.jsonPrimitive?.content
+    } catch (_: Exception) { null }
 
     override fun cancel() {}
 

@@ -121,9 +121,43 @@ class AutocompleteSuggestionNormalizerTest : BasePlatformTestCase() {
             maxChars = 400,
         )
 
+        assertEquals("a *AdditionCounter", normalized)
+    }
+
+    fun testStripsFormattingDifferentSuffixOverlap() {
+        val request = AutocompleteRequest(
+            prefix = "class Foo:\n    def process(",
+            suffix = "self, data):\n        pass",
+            filePath = "demo.py",
+            language = "py",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "self,  data ):",
+            request = request,
+            maxChars = 400,
+        )
+
+        assertEquals("", normalized)
+    }
+
+    fun testStripsPrefixEchoWithDifferentFormatting() {
+        val request = AutocompleteRequest(
+            prefix = "func process( ctx context.Context,",
+            suffix = "",
+            filePath = "main.go",
+            language = "go",
+        )
+
+        val normalized = AutocompleteSuggestionNormalizer.normalize(
+            rawText = "ctx context.Context, data []byte) error {",
+            request = request,
+            maxChars = 400,
+        )
+
         assertFalse(
-            "Should not have duplicate closing paren: '$normalized'",
-            normalized.contains(") Count") && request.suffix.startsWith(")"),
+            "Should strip echoed prefix with different spacing: '$normalized'",
+            normalized.startsWith("ctx context.Context,")
         )
     }
 

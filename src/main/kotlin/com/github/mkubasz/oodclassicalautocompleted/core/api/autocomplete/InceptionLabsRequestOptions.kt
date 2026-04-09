@@ -9,6 +9,8 @@ data class InceptionLabsGenerationOptions(
     val topP: Double? = null,
     val stopSequences: List<String> = emptyList(),
     val extraBodyJson: JsonObject? = null,
+    val diffusing: Boolean? = null,
+    val reasoningEffort: String? = null,
 )
 
 data class InceptionLabsNextEditContextOptions(

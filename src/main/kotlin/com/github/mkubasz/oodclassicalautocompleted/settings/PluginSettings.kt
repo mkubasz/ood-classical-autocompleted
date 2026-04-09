@@ -38,6 +38,8 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var suggestionCacheTtlMs: Long = 15_000L,
         var suggestionCacheMaxEntries: Int = 32,
         var debugMetricsLogging: Boolean = false,
+        var terminalCompletionEnabled: Boolean = false,
+        var terminalProvider: AutocompleteProviderType = AutocompleteProviderType.ANTHROPIC,
         var correctnessFilterEnabled: Boolean = false,
         var minConfidenceScore: Double = 0.0,
         var contextBudgetChars: Int = 4_000,
@@ -59,6 +61,8 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var inceptionLabsNextEditExtraBodyJson: String = "",
         var inceptionLabsNextEditLinesAboveCursor: Int = 5,
         var inceptionLabsNextEditLinesBelowCursor: Int = 10,
+        var inceptionLabsNextEditDiffusing: Boolean = false,
+        var inceptionLabsNextEditReasoningEffort: String = "low",
     )
 
     private var myState = State()

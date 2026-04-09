@@ -58,22 +58,26 @@ class InceptionLabsFimProvider(
             }
 
             val payload = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            val text = payload["choices"]
+            val choice = payload["choices"]
                 ?.jsonArray
                 ?.firstOrNull()
                 ?.jsonObject
-                ?.get("text")
+                ?: return null
+            val text = choice["text"]
                 ?.jsonPrimitive
                 ?.content
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
                 ?: return null
 
+            val confidenceScore = parseLogprobConfidence(choice)
+
             CompletionResponse(
                 inlineCandidates = listOf(
                     InlineCompletionCandidate(
                         text = text,
                         insertionOffset = request.cursorOffset ?: request.prefix.length,
+                        confidenceScore = confidenceScore,
                     )
                 )
             )
@@ -128,6 +132,28 @@ class InceptionLabsFimProvider(
                 log.warn("FIM streaming failed", e)
             }
         }
+    }
+
+    private fun parseLogprobConfidence(choice: JsonObject): Double? {
+        val logprobs = choice["logprobs"]?.jsonObject ?: return null
+        val tokenLogprobs = logprobs["token_logprobs"]?.jsonArray ?: return null
+        if (tokenLogprobs.isEmpty()) return null
+
+        val values = tokenLogprobs.mapNotNull { element ->
+            element.jsonPrimitive.doubleOrNull
+        }
+        if (values.isEmpty()) return null
+
+        val meanLogprob = values.sum() / values.size
+        return logprobToConfidence(meanLogprob)
+    }
+
+    private fun logprobToConfidence(meanLogprob: Double): Double {
+        // Convert mean log probability to 0-1 confidence
+        // logprob 0.0 → confidence 1.0 (certain)
+        // logprob -1.0 → confidence ~0.37
+        // logprob -3.0 → confidence ~0.05
+        return kotlin.math.exp(meanLogprob).coerceIn(0.0, 1.0)
     }
 
     private fun parseSseChunk(data: String): String? = try {

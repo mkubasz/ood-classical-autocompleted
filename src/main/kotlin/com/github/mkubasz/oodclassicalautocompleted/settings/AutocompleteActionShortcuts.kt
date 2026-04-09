@@ -28,6 +28,12 @@ internal object AutocompleteActionShortcuts {
             }
         )
 
+    fun acceptNextWordShortcutSet(): CustomShortcutSet =
+        CustomShortcutSet.fromString("ctrl RIGHT")
+
+    fun acceptNextLineShortcutSet(): CustomShortcutSet =
+        CustomShortcutSet.fromString("ctrl shift RIGHT")
+
     fun rejectShortcutSet(): CustomShortcutSet =
         CustomShortcutSet.fromString("ESCAPE")
 

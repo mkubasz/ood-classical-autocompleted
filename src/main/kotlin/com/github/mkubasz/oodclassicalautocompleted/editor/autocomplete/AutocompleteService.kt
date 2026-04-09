@@ -59,6 +59,7 @@ class AutocompleteService(private val project: Project) : Disposable {
     private var currentSettingsHash: Int? = null
     private var fimProvider: AutocompleteProvider? = null
     private var nextEditProvider: AutocompleteProvider? = null
+    private var terminalProvider: AutocompleteProvider? = null
     private var currentProviderType: AutocompleteProviderType? = null
 
     val hasActiveSuggestion: Boolean
@@ -148,8 +149,9 @@ class AutocompleteService(private val project: Project) : Disposable {
             requestId = requestId,
         )
 
-        val inlineProvider = fimProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
-        val inlineFallbackProvider = nextEditProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
+        val inlineProvider = selectInlineProvider(snapshot)
+        val inlineFallbackProvider = if (snapshot.isTerminal) null
+            else nextEditProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
         if (inlineProvider == null && inlineFallbackProvider == null) return null
         val stablePrefix = snapshot.prefixWindow.dropLast(
             CACHE_STABILITY_MARGIN.coerceAtMost(snapshot.prefixWindow.length)
@@ -157,8 +159,9 @@ class AutocompleteService(private val project: Project) : Disposable {
         val stableSuffix = snapshot.suffixWindow.drop(
             CACHE_STABILITY_MARGIN.coerceAtMost(snapshot.suffixWindow.length)
         )
+        val providerKey = if (snapshot.isTerminal) "terminal" else PluginSettings.getInstance().state.autocompleteProvider.name
         val cacheKey = InlineSuggestionCache.Key(
-            providerKey = PluginSettings.getInstance().state.autocompleteProvider.name,
+            providerKey = providerKey,
             settingsHash = stateHash,
             filePath = snapshot.filePath,
             prefixStableHash = stablePrefix.hashCode(),
@@ -260,8 +263,9 @@ class AutocompleteService(private val project: Project) : Disposable {
             requestId = requestId,
         )
 
-        val inlineProvider = fimProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
-        val inlineFallbackProvider = nextEditProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
+        val inlineProvider = selectInlineProvider(snapshot)
+        val inlineFallbackProvider = if (snapshot.isTerminal) null
+            else nextEditProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
         if (inlineProvider == null && inlineFallbackProvider == null) return null
 
         val stablePrefix = snapshot.prefixWindow.dropLast(
@@ -270,8 +274,9 @@ class AutocompleteService(private val project: Project) : Disposable {
         val stableSuffix = snapshot.suffixWindow.drop(
             CACHE_STABILITY_MARGIN.coerceAtMost(snapshot.suffixWindow.length)
         )
+        val providerKey = if (snapshot.isTerminal) "terminal" else PluginSettings.getInstance().state.autocompleteProvider.name
         val cacheKey = InlineSuggestionCache.Key(
-            providerKey = PluginSettings.getInstance().state.autocompleteProvider.name,
+            providerKey = providerKey,
             settingsHash = stateHash,
             filePath = snapshot.filePath,
             prefixStableHash = stablePrefix.hashCode(),
@@ -575,6 +580,7 @@ class AutocompleteService(private val project: Project) : Disposable {
         scope.cancel()
         fimProvider?.dispose()
         nextEditProvider?.dispose()
+        terminalProvider?.dispose()
         pendingSuggestions.clear()
         inlineStates.keys.toList().forEach(::clearInlineState)
         nextEditStates.keys.toList().forEach(::clearNextEdit)
@@ -602,8 +608,10 @@ class AutocompleteService(private val project: Project) : Disposable {
 
         fimProvider?.dispose()
         nextEditProvider?.dispose()
+        terminalProvider?.dispose()
         fimProvider = AutocompleteProviderFactory.createFimProvider(settings)
         nextEditProvider = AutocompleteProviderFactory.createNextEditProvider(settings)
+        terminalProvider = AutocompleteProviderFactory.createTerminalProvider(settings)
         currentProviderType = settings.autocompleteProvider
         currentSettingsHash = settingsHash
         inlineCache = createInlineCache()
@@ -618,9 +626,19 @@ class AutocompleteService(private val project: Project) : Disposable {
         val caretOffset = request.endOffset.coerceIn(0, documentText.length)
         if (caretOffset != editor.caretModel.offset) return null
 
+        val isTerminal = TerminalDetector.isTerminalEditor(editor)
+        val language = if (isTerminal) "shell" else request.file.language.id
+        val filePath = if (isTerminal) null else request.file.virtualFile?.path
+        val inlineContext = if (isTerminal) null else PsiInlineContextBuilder.build(
+            project = project,
+            document = request.document,
+            documentText = documentText,
+            caretOffset = caretOffset,
+        )
+
         return CompletionContextSnapshot(
-            filePath = request.file.virtualFile?.path,
-            language = request.file.language.id,
+            filePath = filePath,
+            language = language,
             documentText = documentText,
             documentStamp = request.document.modificationStamp,
             caretOffset = caretOffset,
@@ -628,13 +646,9 @@ class AutocompleteService(private val project: Project) : Disposable {
             suffix = documentText.substring(caretOffset),
             prefixWindow = documentText.substring(0, caretOffset).takeLast(CONTEXT_WINDOW_CHARS),
             suffixWindow = documentText.substring(caretOffset).take(CONTEXT_WINDOW_CHARS),
-            inlineContext = PsiInlineContextBuilder.build(
-                project = project,
-                document = request.document,
-                documentText = documentText,
-                caretOffset = caretOffset,
-            ),
+            inlineContext = inlineContext,
             project = project,
+            isTerminal = isTerminal,
         )
     }
 
@@ -858,6 +872,13 @@ class AutocompleteService(private val project: Project) : Disposable {
             maxEntries = settings.suggestionCacheMaxEntries,
             ttlMs = settings.suggestionCacheTtlMs,
         )
+    }
+
+    private fun selectInlineProvider(snapshot: CompletionContextSnapshot): AutocompleteProvider? {
+        if (snapshot.isTerminal) {
+            return terminalProvider ?: fimProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
+        }
+        return fimProvider?.takeIf { AutocompleteCapability.INLINE in it.capabilities }
     }
 
     private fun suppressCaretHandling(editor: Editor, block: () -> Unit) {

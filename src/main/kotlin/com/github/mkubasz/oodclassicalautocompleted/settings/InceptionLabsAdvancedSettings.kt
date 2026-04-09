@@ -165,6 +165,8 @@ internal object InceptionLabsAdvancedSettings {
                 fieldName = "Inception Next Edit extra JSON",
                 disallowedKeys = nextEditExtraJsonDisallowedKeys,
             ),
+            diffusing = state.inceptionLabsNextEditDiffusing,
+            reasoningEffort = state.inceptionLabsNextEditReasoningEffort.takeIf { it.isNotBlank() },
         )
     }
 

@@ -32,47 +32,43 @@ internal object AutocompleteSuggestionNormalizer {
     }
 
     private fun stripPrefixEcho(prefix: String, suggestion: String): String {
-        val overlap = longestOverlap(
-            suffixSource = prefix.takeLast(MAX_OVERLAP_WINDOW),
-            prefixSource = suggestion.take(MAX_OVERLAP_WINDOW),
-        )
+        val prefixTail = prefix.takeLast(MAX_OVERLAP_WINDOW)
+        val suggestionHead = suggestion.take(MAX_OVERLAP_WINDOW)
 
-        return suggestion.drop(overlap)
+        val exact = longestOverlap(prefixTail, suggestionHead)
+        if (exact > 0) return suggestion.drop(exact)
+
+        val normalized = longestOverlapNormalized(prefixTail, suggestionHead)
+        return if (normalized > 0) suggestion.drop(normalized) else suggestion
     }
 
     private fun stripSuffixOverlap(suggestion: String, suffix: String): String {
-        val exactOverlap = longestOverlap(
-            suffixSource = suggestion.takeLast(MAX_OVERLAP_WINDOW),
-            prefixSource = suffix.take(MAX_OVERLAP_WINDOW),
-        )
-        if (exactOverlap > 0) return suggestion.dropLast(exactOverlap)
+        val suggestionTail = suggestion.takeLast(MAX_OVERLAP_WINDOW)
+        val suffixHead = suffix.take(MAX_OVERLAP_WINDOW)
 
-        val normalizedOverlap = longestNormalizedOverlap(
-            suggestionTail = suggestion.takeLast(MAX_OVERLAP_WINDOW),
-            suffixHead = suffix.take(MAX_OVERLAP_WINDOW),
-        )
-        return if (normalizedOverlap > 0) suggestion.dropLast(normalizedOverlap) else suggestion
+        val exact = longestOverlap(suggestionTail, suffixHead)
+        if (exact > 0) return suggestion.dropLast(exact)
+
+        val normalized = longestOverlapNormalized(suggestionTail, suffixHead)
+        return if (normalized > 0) suggestion.dropLast(normalized) else suggestion
     }
 
     private fun longestOverlap(suffixSource: String, prefixSource: String): Int {
         val maxLength = minOf(suffixSource.length, prefixSource.length)
-
         for (length in maxLength downTo 1) {
             if (suffixSource.takeLast(length) == prefixSource.take(length)) {
                 return length
             }
         }
-
         return 0
     }
 
-    private fun longestNormalizedOverlap(suggestionTail: String, suffixHead: String): Int {
-        val normalizedSuffix = suffixHead.trimStart()
-        if (normalizedSuffix.isEmpty()) return 0
-
-        val maxLength = minOf(suggestionTail.length, normalizedSuffix.length)
+    private fun longestOverlapNormalized(suffixSource: String, prefixSource: String): Int {
+        val maxLength = minOf(suffixSource.length, prefixSource.length)
         for (length in maxLength downTo 1) {
-            if (suggestionTail.takeLast(length).trimEnd() == normalizedSuffix.take(length).trimEnd()) {
+            val sTail = normalizeForComparison(suffixSource.takeLast(length))
+            val pHead = normalizeForComparison(prefixSource.take(length))
+            if (sTail == pHead && sTail.isNotEmpty()) {
                 return length
             }
         }
@@ -88,6 +84,13 @@ internal object AutocompleteSuggestionNormalizer {
         val maxCheck = minOf(suggestionFirstLine.length, suffixFirstLine.length, MAX_OVERLAP_WINDOW)
         for (length in maxCheck downTo 1) {
             if (suggestionFirstLine.take(length) == suffixFirstLine.take(length)) {
+                return suggestion.drop(length)
+            }
+        }
+        for (length in maxCheck downTo 1) {
+            val sNorm = normalizeForComparison(suggestionFirstLine.take(length))
+            val xNorm = normalizeForComparison(suffixFirstLine.take(length))
+            if (sNorm == xNorm && sNorm.isNotEmpty()) {
                 return suggestion.drop(length)
             }
         }
@@ -111,9 +114,57 @@ internal object AutocompleteSuggestionNormalizer {
         }
         if (prefixBalance + suggestionBalanceBefore <= 0) return suggestion
 
-        return suggestion.removeRange(firstClose, firstClose + 1)
+        // Strip the duplicate bracket and any trailing text that matches the suffix after the bracket
+        val afterBracketInSuggestion = suggestion.substring(firstClose + 1)
+        val afterBracketInSuffix = suffix.trimStart().drop(1)
+        val trailingOverlap = commonPrefixLength(afterBracketInSuggestion, afterBracketInSuffix)
+
+        return suggestion.substring(0, firstClose) +
+            afterBracketInSuggestion.drop(trailingOverlap)
     }
 
+    private fun commonPrefixLength(a: String, b: String): Int {
+        val exact = commonPrefixLengthExact(a, b)
+        if (exact > 0) return exact
+
+        val aNorm = normalizeForComparison(a)
+        val bNorm = normalizeForComparison(b)
+        val normalizedMatch = commonPrefixLengthExact(aNorm, bNorm)
+        if (normalizedMatch <= 0) return 0
+
+        // Map normalized match length back to original character count
+        return mapNormalizedLengthToOriginal(a, normalizedMatch)
+    }
+
+    private fun commonPrefixLengthExact(a: String, b: String): Int {
+        val max = minOf(a.length, b.length)
+        for (i in 0 until max) {
+            if (a[i] != b[i]) return i
+        }
+        return max
+    }
+
+    private fun mapNormalizedLengthToOriginal(original: String, normalizedLength: Int): Int {
+        var normalizedPos = 0
+        var originalPos = 0
+        val normalized = normalizeForComparison(original)
+        while (originalPos < original.length && normalizedPos < normalizedLength) {
+            val origChar = original[originalPos]
+            if (normalizedPos < normalized.length && normalized[normalizedPos] == origChar) {
+                normalizedPos++
+            }
+            originalPos++
+        }
+        return originalPos
+    }
+
+    private fun normalizeForComparison(text: String): String =
+        text.replace(WHITESPACE_RUN, " ")
+            .replace(BRACKET_SPACE, "$1")
+            .trim()
+
+    private val WHITESPACE_RUN = Regex("\\s+")
+    private val BRACKET_SPACE = Regex("\\s*([()\\[\\]{},;:])\\s*")
     private val CLOSING_BRACKETS = setOf(')', ']', '}')
     private val BRACKET_PAIRS = mapOf(')' to '(', ']' to '[', '}' to '{')
     private const val MIN_DISPLAY_LENGTH = 2

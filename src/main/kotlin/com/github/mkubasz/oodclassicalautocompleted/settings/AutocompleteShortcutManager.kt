@@ -46,12 +46,16 @@ class AutocompleteShortcutManager {
 
         actions.accept.unregisterCustomShortcutSet(component)
         actions.acceptInline.unregisterCustomShortcutSet(component)
+        actions.acceptNextWord.unregisterCustomShortcutSet(component)
+        actions.acceptNextLine.unregisterCustomShortcutSet(component)
         actions.reject.unregisterCustomShortcutSet(component)
         actions.cycleNext.unregisterCustomShortcutSet(component)
         actions.cyclePrevious.unregisterCustomShortcutSet(component)
 
         registerIfPresent(actions.accept, AutocompleteActionShortcuts.tabAcceptShortcutSet(), component)
         registerIfPresent(actions.acceptInline, AutocompleteActionShortcuts.inlineAcceptShortcutSet(state), component)
+        registerIfPresent(actions.acceptNextWord, AutocompleteActionShortcuts.acceptNextWordShortcutSet(), component)
+        registerIfPresent(actions.acceptNextLine, AutocompleteActionShortcuts.acceptNextLineShortcutSet(), component)
         registerIfPresent(actions.reject, AutocompleteActionShortcuts.rejectShortcutSet(), component)
         registerIfPresent(actions.cycleNext, AutocompleteActionShortcuts.cycleNextShortcutSet(state), component)
         registerIfPresent(actions.cyclePrevious, AutocompleteActionShortcuts.cyclePreviousShortcutSet(state), component)
@@ -62,6 +66,8 @@ class AutocompleteShortcutManager {
         val component = editor.contentComponent
         actions.accept.unregisterCustomShortcutSet(component)
         actions.acceptInline.unregisterCustomShortcutSet(component)
+        actions.acceptNextWord.unregisterCustomShortcutSet(component)
+        actions.acceptNextLine.unregisterCustomShortcutSet(component)
         actions.reject.unregisterCustomShortcutSet(component)
         actions.cycleNext.unregisterCustomShortcutSet(component)
         actions.cyclePrevious.unregisterCustomShortcutSet(component)
@@ -78,6 +84,8 @@ class AutocompleteShortcutManager {
         return AutocompleteActions(
             accept = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.ACCEPT_ACTION_ID)),
             acceptInline = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.ACCEPT_INLINE_ACTION_ID)),
+            acceptNextWord = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.ACCEPT_NEXT_WORD_ACTION_ID)),
+            acceptNextLine = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.ACCEPT_NEXT_LINE_ACTION_ID)),
             reject = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.REJECT_ACTION_ID)),
             cycleNext = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.CYCLE_NEXT_ACTION_ID)),
             cyclePrevious = requireNotNull(actionManager.getAction(AutocompleteActionShortcuts.CYCLE_PREVIOUS_ACTION_ID)),
@@ -89,6 +97,8 @@ class AutocompleteShortcutManager {
     private data class AutocompleteActions(
         val accept: AnAction,
         val acceptInline: AnAction,
+        val acceptNextWord: AnAction,
+        val acceptNextLine: AnAction,
         val reject: AnAction,
         val cycleNext: AnAction,
         val cyclePrevious: AnAction,

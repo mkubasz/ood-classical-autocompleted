@@ -107,7 +107,7 @@ class PluginStartupActivity : ProjectActivity {
             }
         }
 
-        editorFactory.getAllEditors()
+        editorFactory.allEditors
             .filter { it.project == project && !it.isViewer }
             .forEach(::configureEditor)
 
